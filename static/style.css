@@ -298,6 +298,12 @@ a:hover { text-decoration: underline; }
   white-space: pre-line;
   line-height: 1.5;
 }
+.job-status .job-error {
+  color: #f87171;
+  font-weight: 600;
+  display: block;
+  margin-top: 2px;
+}
 .sidebar-footer {
   margin-top: auto;
   padding-top: 16px;
@@ -636,3 +642,7 @@ a:hover { text-decoration: underline; }
 /* Danger sidebar button variant */
 .btn-action-danger { color: var(--danger) !important; }
 .btn-action-danger:hover { border-color: var(--danger) !important; background: rgba(240,62,62,0.08) !important; }
+
+/* Demo/preview button variant */
+.btn-action-demo { color: #c4b5fd !important; }
+.btn-action-demo:hover { border-color: #c4b5fd !important; background: rgba(139,92,246,0.12) !important; }

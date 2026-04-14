@@ -35,6 +35,7 @@ class LLMClient:
             model=DEFAULT_GEMINI_MODEL,
             google_api_key=api_key,
             temperature=0,
+            max_retries=1,  # Fail fast — don't spin forever on quota errors
         )
 
     def invoke_json(self, system_prompt, user_prompt_text):
@@ -58,6 +59,14 @@ class LLMClient:
                 clean = clean[:-3]
             return json.loads(clean.strip())
         except Exception as e:
+            err_str = str(e)
+            # Surface quota errors immediately — don't swallow them
+            if any(k in err_str for k in ("quota", "ResourceExhausted", "429", "rate limit")):
+                raise RuntimeError(
+                    f"Gemini API daily quota exceeded "
+                    f"(free tier: 20 req/day for {DEFAULT_GEMINI_MODEL}). "
+                    f"Processing will resume automatically tomorrow when the quota resets."
+                ) from e
             print(f"LLM Invocation Error: {e}")
             return None
 

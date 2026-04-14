@@ -433,17 +433,35 @@ function startJobPolling() {
 async function updateJobStatus() {
   try {
     const jobs = await api('GET', '/api/jobs');
-    const lines = [];
-    if (jobs.fetch.running)        lines.push('⏳ Fetching emails…');
-    else if (jobs.fetch.last)      lines.push(`Fetch: ${jobs.fetch.last}`);
-    if (jobs.process.running)      lines.push('⏳ Processing with AI…');
-    else if (jobs.process.last)    lines.push(`Process: ${jobs.process.last}`);
+    const parts = [];
+
+    if (jobs.fetch.running) {
+      parts.push('<span>⏳ Fetching emails…</span>');
+    } else if (jobs.fetch.last) {
+      if (jobs.fetch.last.startsWith('error:')) {
+        parts.push(`<span class="job-error">❌ Fetch failed: ${escHtml(jobs.fetch.last.replace('error:', '').trim())}</span>`);
+      } else {
+        parts.push(`<span>Fetch: ${escHtml(jobs.fetch.last)}</span>`);
+      }
+    }
+
+    if (jobs.process.running) {
+      parts.push('<span>⏳ Processing with AI…</span>');
+    } else if (jobs.process.last) {
+      if (jobs.process.last.startsWith('error:')) {
+        const msg = jobs.process.last.replace('error:', '').trim();
+        parts.push(`<span class="job-error">❌ ${escHtml(msg)}</span>`);
+      } else {
+        parts.push(`<span>Process: ${escHtml(jobs.process.last)}</span>`);
+      }
+    }
+
+    document.getElementById('job-status').innerHTML = parts.join('\n');
 
     // Auto-refresh list when a job just succeeded
     if (jobs.fetch.last === 'success' || jobs.process.last === 'success') {
       loadEmails();
     }
-    document.getElementById('job-status').textContent = lines.join('\n');
   } catch (_) {}
 }
 
@@ -474,6 +492,19 @@ document.getElementById('btn-process').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-refresh-list').addEventListener('click', loadEmails);
+
+document.getElementById('btn-demo').addEventListener('click', async () => {
+  try {
+    const r = await api('POST', '/api/emails/demo');
+    await loadEmails();
+    // Select the first demo email automatically
+    if (window._emailsCache && window._emailsCache.length > 0) {
+      selectEmail(0);
+    }
+  } catch (e) {
+    alert(`Error loading demo: ${e.message}`);
+  }
+});
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
   if (!confirm('Clear all processed emails? Raw emails are kept — you can reprocess anytime.')) return;

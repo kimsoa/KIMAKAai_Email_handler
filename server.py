@@ -139,6 +139,87 @@ def clear_emails():
     return {"ok": True}
 
 
+_DEMO_EMAILS = [
+    {
+        "gmail_id": "_demo_1",
+        "sender": "sarah.chen@acme-corp.com",
+        "subject": "Q2 Budget Review — Action Required by Friday",
+        "date": "Mon, 14 Apr 2026 09:15:00 +0000",
+        "executive_summary": {
+            "one_liner": "Q2 budget needs your sign-off by Friday or projects stall",
+            "key_points": [
+                "Marketing overspent by $42k in Q1; revised Q2 budget needs your approval",
+                "Board meeting April 18 requires final budget slides from you",
+                "Project Phoenix and Orion on hold pending funding confirmation",
+            ],
+            "sentiment": "Urgent",
+            "priority": "High",
+        },
+        "action_items": {
+            "tasks": [
+                {"task": "Approve revised Q2 budget document", "due_date": "2026-04-17"},
+                {"task": "Prepare updated budget slides for board meeting", "due_date": "2026-04-17"},
+                {"task": "Confirm funding allocation for Project Phoenix and Orion", "due_date": "2026-04-18"},
+            ],
+            "owner": "user",
+        },
+        "draft_options": {
+            "professional": (
+                "Dear Sarah,\n\nThank you for the detailed Q2 budget overview. "
+                "I have reviewed the revised figures and will complete the approval by end of day Thursday, April 17th.\n\n"
+                "I will also prepare the updated board slides before the April 18th meeting — "
+                "could you confirm the exact submission deadline?\n\n"
+                "Funding confirmation for Project Phoenix and Orion will follow separately by Thursday.\n\nBest regards"
+            ),
+            "brief": "Noted — approving budget and sending board slides by Thursday EOD. Will confirm Project Phoenix/Orion funding separately.",
+            "scheduler": "Hi Sarah, would a 30-min call Thursday April 17th at 2 PM work to align on budget figures before I submit the slides?",
+        },
+        "category": "Finance & Budgeting",
+        "is_passive_participation": False,
+    },
+    {
+        "gmail_id": "_demo_2",
+        "sender": "all-staff@acme-corp.com",
+        "subject": "Reminder: Office Closure on April 25th — Easter Weekend",
+        "date": "Mon, 14 Apr 2026 08:00:00 +0000",
+        "executive_summary": {
+            "one_liner": "Office closed April 25 for Easter; no action required from you",
+            "key_points": [
+                "Office will be closed Friday April 25th for Easter",
+                "Plan project deadlines and deliverables accordingly",
+                "Emergency contact details available on the company intranet",
+            ],
+            "sentiment": "FYI",
+            "priority": "Low",
+        },
+        "action_items": {
+            "tasks": [],
+            "owner": "user",
+        },
+        "draft_options": {
+            "professional": "Thank you for the reminder — noted in the calendar.",
+            "brief": "Got it, thanks.",
+            "scheduler": None,
+        },
+        "category": "Company Announcements",
+        "is_passive_participation": True,
+    },
+]
+
+
+@app.post("/api/emails/demo")
+def load_demo():
+    """Wipe processed JSONL and write pre-built demo emails so UI can be previewed."""
+    try:
+        os.remove(PROCESSED_EMAILS_FILE)
+    except OSError:
+        pass
+    with open(PROCESSED_EMAILS_FILE, "w") as f:
+        for record in _DEMO_EMAILS:
+            f.write(json.dumps(record) + "\n")
+    return {"ok": True, "count": len(_DEMO_EMAILS)}
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/jobs")
