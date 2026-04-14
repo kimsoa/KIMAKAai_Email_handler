@@ -130,6 +130,15 @@ def get_emails():
     return emails
 
 
+@app.delete("/api/emails/clear")
+def clear_emails():
+    try:
+        os.remove(PROCESSED_EMAILS_FILE)
+    except OSError:
+        pass
+    return {"ok": True}
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/jobs")

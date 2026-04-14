@@ -116,6 +116,7 @@
         <div class="sidebar-actions">
           <button id="btn-fetch" class="btn btn-action">Fetch Emails</button>
           <button id="btn-process" class="btn btn-action">Process with AI</button>
+          <button id="btn-clear" class="btn btn-action btn-action-danger">Clear Processed</button>
         </div>
         <div id="job-status" class="job-status"></div>
         <div class="sidebar-footer">
@@ -123,17 +124,30 @@
         </div>
       </aside>
 
-      <main class="email-list-container">
-        <div class="list-header">
-          <h3 id="email-count-title">Processed Emails</h3>
-          <button id="btn-refresh-list" class="btn btn-icon" title="Refresh">↻</button>
-        </div>
-        <div id="email-list">
-          <div class="empty-state">
-            <p>No processed emails yet.<br>Use the sidebar to fetch and process.</p>
+      <div class="inbox-body">
+
+        <section class="email-list-panel">
+          <div class="list-header">
+            <h3 id="email-count-title">Processed Emails</h3>
+            <button id="btn-refresh-list" class="btn btn-icon" title="Refresh">↻</button>
           </div>
-        </div>
-      </main>
+          <div id="email-list">
+            <div class="empty-state">
+              <p>No processed emails yet.<br>Use the sidebar to fetch and process.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="email-detail-panel">
+          <div id="email-detail">
+            <div class="detail-empty">
+              <span class="detail-empty-icon">📬</span>
+              <p>Select an email to view details</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
 
     </div>
   </div>

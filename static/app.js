@@ -4,6 +4,7 @@
 
 // ── State ────────────────────────────────────────────────────────────────────
 let _jobPollInterval = null;
+let _selectedEmail = null;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ function showInbox() {
 async function loadEmails() {
   try {
     const emails = await api('GET', '/api/emails');
-    renderEmails(emails);
+    renderEmailList(emails);
     document.getElementById('email-count-title').textContent =
       `Processed Emails (${emails.length})`;
   } catch (e) {
@@ -273,30 +274,152 @@ function priorityBadge(priority) {
   return `<span class="email-badge ${cls}">${escHtml(priority)}</span>`;
 }
 
-function renderEmails(emails) {
+function renderEmailList(emails) {
   const container = document.getElementById('email-list');
   if (!emails.length) {
     container.innerHTML = `
       <div class="empty-state">
         <p>No processed emails yet.<br>Use the sidebar to fetch and process.</p>
       </div>`;
+    _selectedEmail = null;
+    document.getElementById('email-detail').innerHTML = `
+      <div class="detail-empty">
+        <span class="detail-empty-icon">📬</span>
+        <p>Select an email to view details</p>
+      </div>`;
     return;
   }
-  container.innerHTML = emails.map((e, i) => `
-    <div class="email-card" data-idx="${i}" onclick="this.classList.toggle('expanded')">
-      <div class="email-card-header">
-        <span class="email-subject">${escHtml(e.subject || '(no subject)')}</span>
-        ${priorityBadge(e.priority)}
+
+  container.innerHTML = emails.map((e, i) => {
+    const es = e.executive_summary || {};
+    const priority = es.priority || e.priority || null;
+    const oneLiner = es.one_liner || e.subject || '(no subject)';
+    const sender = e.sender || '?';
+    const category = e.category || 'General';
+    return `
+      <div class="email-row" data-idx="${i}" onclick="selectEmail(${i})">
+        <div class="row-top">
+          <span class="row-subject">${escHtml(oneLiner)}</span>
+          ${priorityBadge(priority)}
+        </div>
+        <div class="row-meta">${escHtml(sender)} · ${escHtml(category)}</div>
+      </div>`;
+  }).join('');
+
+  // Keep selection in sync after list refresh
+  if (_selectedEmail) {
+    const idx = emails.findIndex(e => e.gmail_id === _selectedEmail.gmail_id);
+    if (idx >= 0) {
+      container.querySelectorAll('.email-row')[idx].classList.add('selected');
+      renderDetailPanel(emails[idx]);
+    }
+  }
+
+  window._emailsCache = emails;
+}
+
+function selectEmail(idx) {
+  _selectedEmail = window._emailsCache[idx];
+  document.querySelectorAll('.email-row').forEach((r, i) => {
+    r.classList.toggle('selected', i === idx);
+  });
+  renderDetailPanel(_selectedEmail);
+}
+
+function renderDetailPanel(email) {
+  const es = email.executive_summary || {};
+  const ai = email.action_items || {};
+  const draft = email.draft_options || {};
+  const tasks = ai.tasks || [];
+  const owner = ai.owner || 'user';
+  const priority = es.priority || email.priority || 'Medium';
+  const sentiment = (es.sentiment || '').replace(/\s+/g, '');
+
+  const passiveBanner = email.is_passive_participation
+    ? `<div class="passive-banner">👁 You are CC'd — no action required from you</div>`
+    : '';
+
+  const keyPoints = (es.key_points || []).map(p =>
+    `<li>${escHtml(p)}</li>`).join('');
+
+  const taskItems = tasks.length
+    ? tasks.map(t => `
+        <li class="task-item">
+          <span class="task-bullet"></span>
+          <span class="task-text">${escHtml(t.task)}</span>
+          ${t.due_date ? `<span class="task-due">${escHtml(t.due_date)}</span>` : ''}
+        </li>`).join('')
+    : `<li class="task-item"><span class="task-text" style="color:var(--text-muted)">No action items</span></li>`;
+
+  const hasProfessional = !!draft.professional;
+  const hasBrief        = !!draft.brief;
+  const hasScheduler    = !!draft.scheduler;
+  const defaultDraft    = draft.professional || draft.brief || draft.scheduler || '';
+
+  const detailHtml = `
+    <div class="detail-header">
+      <h2>${escHtml(email.subject || '(no subject)')}</h2>
+      <div class="detail-meta">
+        <span>From: ${escHtml(email.sender || '?')}</span>
+        <span>${escHtml(email.date || '')}</span>
+        ${priorityBadge(priority)}
+        <span class="sentiment-badge sentiment-${escHtml(sentiment)}">${escHtml(es.sentiment || '—')}</span>
       </div>
-      <div class="email-meta">
-        From: ${escHtml(e.sender || '?')}
-        &nbsp;·&nbsp; ${escHtml(e.category || 'General')}
-        &nbsp;·&nbsp; ${escHtml(e.date || '')}
-      </div>
-      ${e.summary ? `<div class="email-summary">${escHtml(e.summary)}</div>` : ''}
-      ${e.draft_response ? `<div class="email-draft">${escHtml(e.draft_response)}</div>` : ''}
     </div>
-  `).join('');
+
+    ${passiveBanner}
+
+    <div class="detail-card" id="card-exec">
+      <div class="detail-card-title">📋 Executive Summary</div>
+      <div class="exec-one-liner">${escHtml(es.one_liner || '—')}</div>
+      <ul class="exec-key-points">${keyPoints}</ul>
+    </div>
+
+    <div class="detail-card" id="card-actions">
+      <div class="detail-card-title">✅ Action Items</div>
+      <ul class="task-list">${taskItems}</ul>
+      <div class="owner-chip">Owner: ${escHtml(owner)}</div>
+    </div>
+
+    <div class="detail-card" id="card-drafts">
+      <div class="detail-card-title">✍ Draft Options</div>
+      <div class="draft-tabs">
+        <button class="draft-tab active" id="tab-professional"
+          onclick="switchDraft('professional')" ${hasProfessional ? '' : 'disabled'}>Professional</button>
+        <button class="draft-tab" id="tab-brief"
+          onclick="switchDraft('brief')" ${hasBrief ? '' : 'disabled'}>Brief</button>
+        <button class="draft-tab" id="tab-scheduler"
+          onclick="switchDraft('scheduler')" ${hasScheduler ? '' : 'disabled'}>Scheduler</button>
+      </div>
+      <textarea class="draft-textarea" id="draft-textarea" spellcheck="true">${escHtml(defaultDraft)}</textarea>
+      <button class="copy-btn" onclick="copyDraft()">📋 Copy draft</button>
+    </div>
+  `;
+
+  document.getElementById('email-detail').innerHTML = detailHtml;
+  window._currentDrafts = {
+    professional: draft.professional || '',
+    brief: draft.brief || '',
+    scheduler: draft.scheduler || '',
+  };
+}
+
+function switchDraft(key) {
+  const text = (window._currentDrafts || {})[key] || '';
+  document.getElementById('draft-textarea').value = text;
+  document.querySelectorAll('.draft-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.id === `tab-${key}`);
+  });
+}
+
+function copyDraft() {
+  const text = document.getElementById('draft-textarea').value;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }).catch(() => alert('Copy failed — please select and copy manually.'));
 }
 
 // ── Job polling ───────────────────────────────────────────────────────────────
@@ -351,6 +474,16 @@ document.getElementById('btn-process').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-refresh-list').addEventListener('click', loadEmails);
+
+document.getElementById('btn-clear').addEventListener('click', async () => {
+  if (!confirm('Clear all processed emails? Raw emails are kept — you can reprocess anytime.')) return;
+  try {
+    await api('DELETE', '/api/emails/clear');
+    await loadEmails();
+  } catch (e) {
+    alert(`Error: ${e.message}`);
+  }
+});
 
 document.getElementById('btn-reset').addEventListener('click', async () => {
   if (!confirm('This will remove your Gmail credentials and token. Continue?')) return;
