@@ -107,27 +107,25 @@
     <div class="inbox-layout">
 
       <aside class="sidebar">
-        <div class="sidebar-header">
-          <h2>📧 Email Handler</h2>
-        </div>
+        <div class="sidebar-brand">📧</div>
         <nav>
-          <button class="nav-item active" id="nav-inbox">Inbox</button>
+          <button class="nav-item active" id="nav-inbox" title="Inbox">📥</button>
         </nav>
-        <div class="sidebar-actions">
-          <button id="btn-fetch" class="btn btn-action">Fetch Emails</button>
-          <button id="btn-process" class="btn btn-action">Process with AI</button>
-          <button id="btn-demo" class="btn btn-action btn-action-demo" title="Load sample emails to preview the card UI">&#127917; Load Demo</button>
-          <button id="btn-clear" class="btn btn-action btn-action-danger">Clear Processed</button>
-        </div>
-        <div id="job-status" class="job-status"></div>
         <div class="sidebar-footer">
-          <button id="btn-reset" class="btn btn-danger-small">Reset Auth</button>
+          <button id="btn-reset" class="btn btn-icon sidebar-icon-btn" title="Reset Authentication">🔑</button>
         </div>
       </aside>
 
       <div class="inbox-body">
 
         <section class="email-list-panel">
+          <div class="list-toolbar">
+            <button id="btn-fetch"   class="btn btn-toolbar">🔄 Fetch</button>
+            <button id="btn-process" class="btn btn-toolbar">⚡ Process</button>
+            <button id="btn-demo"    class="btn btn-toolbar btn-toolbar-demo" title="Load sample emails to preview the card UI">🎭 Demo</button>
+            <button id="btn-clear"   class="btn btn-toolbar btn-toolbar-danger">🗑 Clear</button>
+          </div>
+          <div id="job-status" class="job-status"></div>
           <div class="list-header">
             <h3 id="email-count-title">Processed Emails</h3>
             <button id="btn-refresh-list" class="btn btn-icon" title="Refresh">↻</button>

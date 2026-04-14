@@ -356,9 +356,15 @@ function renderDetailPanel(email) {
   const hasScheduler    = !!draft.scheduler;
   const defaultDraft    = draft.professional || draft.brief || draft.scheduler || '';
 
+  const savedLayout = localStorage.getItem('cards-layout') || 'layout-2-1';
+  const toggleLabel  = savedLayout === 'layout-3' ? '▉▉▉' : '▉▉';
+
   const detailHtml = `
     <div class="detail-header">
-      <h2>${escHtml(email.subject || '(no subject)')}</h2>
+      <div class="detail-header-top">
+        <h2>${escHtml(email.subject || '(no subject)')}</h2>
+        <button class="layout-toggle-btn" id="btn-layout-toggle" title="Toggle card layout">${toggleLabel}</button>
+      </div>
       <div class="detail-meta">
         <span>From: ${escHtml(email.sender || '?')}</span>
         <span>${escHtml(email.date || '')}</span>
@@ -369,30 +375,34 @@ function renderDetailPanel(email) {
 
     ${passiveBanner}
 
-    <div class="detail-card" id="card-exec">
-      <div class="detail-card-title">📋 Executive Summary</div>
-      <div class="exec-one-liner">${escHtml(es.one_liner || '—')}</div>
-      <ul class="exec-key-points">${keyPoints}</ul>
-    </div>
+    <div class="cards-grid ${savedLayout}">
 
-    <div class="detail-card" id="card-actions">
-      <div class="detail-card-title">✅ Action Items</div>
-      <ul class="task-list">${taskItems}</ul>
-      <div class="owner-chip">Owner: ${escHtml(owner)}</div>
-    </div>
-
-    <div class="detail-card" id="card-drafts">
-      <div class="detail-card-title">✍ Draft Options</div>
-      <div class="draft-tabs">
-        <button class="draft-tab active" id="tab-professional"
-          onclick="switchDraft('professional')" ${hasProfessional ? '' : 'disabled'}>Professional</button>
-        <button class="draft-tab" id="tab-brief"
-          onclick="switchDraft('brief')" ${hasBrief ? '' : 'disabled'}>Brief</button>
-        <button class="draft-tab" id="tab-scheduler"
-          onclick="switchDraft('scheduler')" ${hasScheduler ? '' : 'disabled'}>Scheduler</button>
+      <div class="detail-card" id="card-exec">
+        <div class="detail-card-title">📋 Executive Summary</div>
+        <div class="exec-one-liner">${escHtml(es.one_liner || '—')}</div>
+        <ul class="exec-key-points">${keyPoints}</ul>
       </div>
-      <textarea class="draft-textarea" id="draft-textarea" spellcheck="true">${escHtml(defaultDraft)}</textarea>
-      <button class="copy-btn" onclick="copyDraft()">📋 Copy draft</button>
+
+      <div class="detail-card" id="card-actions">
+        <div class="detail-card-title">✅ Action Items</div>
+        <ul class="task-list">${taskItems}</ul>
+        <div class="owner-chip">Owner: ${escHtml(owner)}</div>
+      </div>
+
+      <div class="detail-card" id="card-drafts">
+        <div class="detail-card-title">✍ Draft Options</div>
+        <div class="draft-tabs">
+          <button class="draft-tab active" id="tab-professional"
+            onclick="switchDraft('professional')" ${hasProfessional ? '' : 'disabled'}>Professional</button>
+          <button class="draft-tab" id="tab-brief"
+            onclick="switchDraft('brief')" ${hasBrief ? '' : 'disabled'}>Brief</button>
+          <button class="draft-tab" id="tab-scheduler"
+            onclick="switchDraft('scheduler')" ${hasScheduler ? '' : 'disabled'}>Scheduler</button>
+        </div>
+        <textarea class="draft-textarea" id="draft-textarea" spellcheck="true">${escHtml(defaultDraft)}</textarea>
+        <button class="copy-btn" onclick="copyDraft()">📋 Copy draft</button>
+      </div>
+
     </div>
   `;
 
@@ -526,6 +536,20 @@ document.getElementById('btn-reset').addEventListener('click', async () => {
   } catch (e) {
     alert(`Error: ${e.message}`);
   }
+});
+
+// Layout toggle — event-delegated on #email-detail (button is re-rendered on each email select)
+document.getElementById('email-detail').addEventListener('click', e => {
+  const btn = e.target.closest('#btn-layout-toggle');
+  if (!btn) return;
+  const grid = document.querySelector('.cards-grid');
+  if (!grid) return;
+  const isThree = grid.classList.contains('layout-3');
+  const next = isThree ? 'layout-2-1' : 'layout-3';
+  grid.classList.remove('layout-2-1', 'layout-3');
+  grid.classList.add(next);
+  btn.textContent = next === 'layout-3' ? '▉▉▉' : '▉▉';
+  localStorage.setItem('cards-layout', next);
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
