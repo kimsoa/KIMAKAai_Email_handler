@@ -87,8 +87,45 @@ def render_settings_page():
 
     # If the user HAS uploaded their client secret but needs to authorize the consent screen
     else:
+        # Retrieve any pending auth_code the user submitted
         auth_code = st.session_state.get("auth_code")
-        service, auth_url = get_gmail_service(client_secret_path, token_path, auth_code)
+        stored_verifier = st.session_state.get("gmail_code_verifier")
+
+        if auth_code and stored_verifier:
+            # User has pasted the URL — attempt the token exchange
+            service, _, _ = get_gmail_service(client_secret_path, token_path, auth_code, stored_verifier)
+            # Clean up session state after attempt (success or failure)
+            st.session_state.pop("auth_code", None)
+            st.session_state.pop("gmail_auth_url", None)
+            st.session_state.pop("gmail_code_verifier", None)
+            auth_url = None
+        elif auth_code and not stored_verifier:
+            # Verifier was lost (process restart between URL display and code paste) — restart flow
+            st.session_state.pop("auth_code", None)
+            st.session_state.pop("gmail_auth_url", None)
+            service, auth_url_fresh, verifier = get_gmail_service(client_secret_path, token_path)
+            service = None
+            auth_url = auth_url_fresh
+            if auth_url and verifier:
+                st.session_state["gmail_auth_url"] = auth_url
+                st.session_state["gmail_code_verifier"] = verifier
+            st.warning("⚠️ Session expired — a new authorization link has been generated. Please start from Step 1 again.")
+        else:
+            # No pending auth code — check if already authenticated, or show the auth URL
+            if "gmail_auth_url" not in st.session_state:
+                # Generate and cache the (auth_url, verifier) pair once per session
+                service, auth_url_fresh, verifier = get_gmail_service(client_secret_path, token_path)
+                if auth_url_fresh:
+                    # Not yet authenticated — store the pair so reruns don't regenerate it
+                    st.session_state["gmail_auth_url"] = auth_url_fresh
+                    st.session_state["gmail_code_verifier"] = verifier
+                    auth_url = auth_url_fresh
+                    service = None
+                # else: service is set — already authenticated, fall through
+            else:
+                # We already have a cached auth URL — reuse it; don't call get_gmail_service again
+                auth_url = st.session_state["gmail_auth_url"]
+                service = None
         
         if auth_url:
             st.warning("⚠️ You uploaded the credentials, but you must now authorize the application.")
@@ -126,7 +163,6 @@ def render_settings_page():
             if st.button("Connect Account"):
                 st.session_state["auth_code"] = auth_code_input
                 st.rerun()
-                
         elif service is None:
             st.error("Authentication failed. Please check your credentials or delete `token.pickle` and try again.")
             if st.button("Reset Gmail Authentication"):
@@ -194,7 +230,7 @@ def is_fully_configured():
         return False
         
     auth_code = st.session_state.get("auth_code")
-    service, _ = get_gmail_service(client_secret_path, token_path, auth_code)
+    service, _, _ = get_gmail_service(client_secret_path, token_path, auth_code)
     
     return has_api_key and service is not None
 

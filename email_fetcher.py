@@ -1,6 +1,5 @@
 import os
 import pickle
-from typing import Optional
 from urllib.parse import urlparse, parse_qs
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -15,11 +14,6 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 # The browser will show "This site can't be reached" — that is expected.
 REDIRECT_URI = 'http://localhost'
 
-# Streamlit recreates the flow object on every rerun, so the PKCE code_verifier
-# that was generated during authorization_url() would be lost. We persist it here
-# at module level (safe: single-user app) so it survives the Streamlit rerun.
-_oauth_code_verifier: Optional[str] = None
-
 
 def _extract_code(raw_input: str) -> str:
     """Accepts either a bare auth code or the full redirect URL and returns just the code."""
@@ -33,9 +27,14 @@ def _extract_code(raw_input: str) -> str:
     return raw_input
 
 
-def get_gmail_service(client_secret_path='client_secret.json', token_path='token.pickle', auth_code=None):
-    """Loads credentials from `token.pickle` if available, otherwise performs OAuth flow."""
-    global _oauth_code_verifier
+def get_gmail_service(client_secret_path='client_secret.json', token_path='token.pickle', auth_code=None, code_verifier=None):
+    """Loads credentials from `token.pickle` if available, otherwise performs OAuth flow.
+
+    Returns (service, auth_url, code_verifier):
+      - (service, None, None)       — already authenticated
+      - (None, auth_url, verifier)  — need user to visit auth_url, then call back with code
+      - (None, None, None)          — error (missing client_secret)
+    """
     creds = None
     if os.path.exists(token_path):
         with open(token_path, 'rb') as token:
@@ -46,36 +45,33 @@ def get_gmail_service(client_secret_path='client_secret.json', token_path='token
             creds.refresh(Request())
         else:
             if not os.path.exists(client_secret_path):
-                return None, None  # Indicate that client secret is missing
+                return None, None, None  # Indicate that client secret is missing
 
             flow = InstalledAppFlow.from_client_secrets_file(client_secret_path, SCOPES)
             flow.redirect_uri = REDIRECT_URI
-            if auth_code:
-                raw = auth_code.strip()
-                verifier = _oauth_code_verifier
-                _oauth_code_verifier = None  # reset after single use
-                # Extract just the code (handles both full URL and bare code).
-                # Using code= instead of authorization_response= avoids state mismatch
-                # because the flow object is recreated fresh on each Streamlit rerun.
-                code = _extract_code(raw)
-                flow.fetch_token(code=code, code_verifier=verifier)
+            if auth_code and code_verifier:
+                # Exchange the auth code for tokens, providing the verifier that
+                # was generated when we originally produced the authorization_url.
+                code = _extract_code(auth_code.strip())
+                flow.fetch_token(code=code, code_verifier=code_verifier)
                 creds = flow.credentials
+            elif auth_code and not code_verifier:
+                # Verifier was lost — cannot complete exchange safely.
+                return None, None, None
             else:
+                # First call: generate the auth URL and return the verifier so the
+                # caller (app.py) can store it in st.session_state alongside the URL.
                 auth_url, _ = flow.authorization_url(prompt='consent')
-                # flow.code_verifier is set by InstalledAppFlow.authorization_url()
-                # when autogenerate_code_verifier=True (the default). It lives on the
-                # flow object itself — NOT on flow.oauth2session._client.
-                _oauth_code_verifier = flow.code_verifier
-                return None, auth_url
+                return None, auth_url, flow.code_verifier
 
         with open(token_path, 'wb') as token:
             pickle.dump(creds, token)
 
-    return build('gmail', 'v1', credentials=creds), None
+    return build('gmail', 'v1', credentials=creds), None, None
 
 def fetch_unread_emails_and_save():
     """Fetches unread emails from Gmail and saves their raw content."""
-    service = get_gmail_service()
+    service, _, _ = get_gmail_service()
     emails_fetched_count = 0
     try:
         # Request only unread messages
