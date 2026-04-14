@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+processed_emails.jsonl
+raw_emails/
+auth/
+.env
+client_secret*.json
+token.pickle

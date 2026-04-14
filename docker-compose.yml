@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  email-handler:
+    build: .
+    ports:
+      - "8503:8501"
+    volumes:
+      - .:/app
+      - auth_data:/app/auth
+
+volumes:
+  auth_data:
