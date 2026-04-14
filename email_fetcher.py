@@ -1,4 +1,6 @@
 import os
+import json
+import time
 import pickle
 from urllib.parse import urlparse, parse_qs
 from google.auth.transport.requests import Request
@@ -14,6 +16,41 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 # The browser will show "This site can't be reached" — that is expected.
 REDIRECT_URI = 'http://localhost'
 
+# Google auth codes expire in 10 minutes. We allow 15 min before regenerating.
+_PKCE_MAX_AGE_SECS = 900
+
+
+def _pkce_file(token_path: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(token_path)), 'pkce_pending.json')
+
+
+def _load_pending(token_path: str):
+    """Return saved (auth_url, verifier) if within max age, else None."""
+    path = _pkce_file(token_path)
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        if time.time() - data.get('ts', 0) > _PKCE_MAX_AGE_SECS:
+            os.remove(path)
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def _save_pending(token_path: str, auth_url: str, verifier: str):
+    path = _pkce_file(token_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump({'auth_url': auth_url, 'verifier': verifier, 'ts': time.time()}, f)
+
+
+def _clear_pending(token_path: str):
+    try:
+        os.remove(_pkce_file(token_path))
+    except OSError:
+        pass
+
 
 def _extract_code(raw_input: str) -> str:
     """Accepts either a bare auth code or the full redirect URL and returns just the code."""
@@ -27,51 +64,78 @@ def _extract_code(raw_input: str) -> str:
     return raw_input
 
 
-def get_gmail_service(client_secret_path='client_secret.json', token_path='token.pickle', auth_code=None, code_verifier=None):
+def get_gmail_service(client_secret_path='client_secret.json', token_path='token.pickle',
+                      auth_code=None, code_verifier=None):
     """Loads credentials from `token.pickle` if available, otherwise performs OAuth flow.
+
+    PKCE (auth_url + code_verifier) is persisted to a file next to token.pickle so the
+    pair survives Streamlit server restarts triggered by file-watcher reloads.
 
     Returns (service, auth_url, code_verifier):
       - (service, None, None)       — already authenticated
-      - (None, auth_url, verifier)  — need user to visit auth_url, then call back with code
-      - (None, None, None)          — error (missing client_secret)
+      - (None, auth_url, verifier)  — need user to visit auth_url, then call back with auth_code
+      - (None, None, None)          — error (missing client_secret or unrecoverable state)
     """
     creds = None
     if os.path.exists(token_path):
-        with open(token_path, 'rb') as token:
-            creds = pickle.load(token)
+        with open(token_path, 'rb') as f:
+            creds = pickle.load(f)
+        _clear_pending(token_path)  # auth is complete; clean up any leftover pending file
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             if not os.path.exists(client_secret_path):
-                return None, None, None  # Indicate that client secret is missing
+                return None, None, None
 
             flow = InstalledAppFlow.from_client_secrets_file(client_secret_path, SCOPES)
             flow.redirect_uri = REDIRECT_URI
-            if auth_code and code_verifier:
-                # Exchange the auth code for tokens, providing the verifier that
-                # was generated when we originally produced the authorization_url.
-                code = _extract_code(auth_code.strip())
-                flow.fetch_token(code=code, code_verifier=code_verifier)
-                creds = flow.credentials
-            elif auth_code and not code_verifier:
-                # Verifier was lost — cannot complete exchange safely.
-                return None, None, None
-            else:
-                # First call: generate the auth URL and return the verifier so the
-                # caller (app.py) can store it in st.session_state alongside the URL.
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                return None, auth_url, flow.code_verifier
 
-        with open(token_path, 'wb') as token:
-            pickle.dump(creds, token)
+            if auth_code:
+                # --- Token exchange ---
+                # Resolve verifier: prefer the value passed in (from session_state),
+                # then fall back to the file (survives Streamlit restarts).
+                verifier = code_verifier
+                if not verifier:
+                    pending = _load_pending(token_path)
+                    if pending:
+                        verifier = pending.get('verifier')
+
+                if not verifier:
+                    # Verifier is gone and the pending file is expired/missing.
+                    # Return a sentinel so the caller can show the auth URL again.
+                    return None, None, None
+
+                code = _extract_code(auth_code.strip())
+                flow.fetch_token(code=code, code_verifier=verifier)
+                creds = flow.credentials
+                _clear_pending(token_path)
+            else:
+                # --- Auth URL request ---
+                # Reuse an existing valid pending pair so we never change the
+                # code_challenge that's already been sent to Google's auth server.
+                pending = _load_pending(token_path)
+                if pending:
+                    return None, pending['auth_url'], pending['verifier']
+
+                # No valid pending file — generate a fresh PKCE pair.
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                verifier = flow.code_verifier
+                _save_pending(token_path, auth_url, verifier)
+                return None, auth_url, verifier
+
+        with open(token_path, 'wb') as f:
+            pickle.dump(creds, f)
 
     return build('gmail', 'v1', credentials=creds), None, None
 
 def fetch_unread_emails_and_save():
     """Fetches unread emails from Gmail and saves their raw content."""
-    service, _, _ = get_gmail_service()
+    auth_dir = os.environ.get("AUTH_DIR", ".")
+    secret = os.path.join(auth_dir, "client_secret.json")
+    token = os.path.join(auth_dir, "token.pickle")
+    service, _, _ = get_gmail_service(secret, token)
     emails_fetched_count = 0
     try:
         # Request only unread messages

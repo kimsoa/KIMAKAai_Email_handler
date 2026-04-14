@@ -3,7 +3,9 @@ services:
   email-handler:
     build: .
     ports:
-      - "8503:8501"
+      - "8503:8000"
+    environment:
+      - AUTH_DIR=/app/auth
     volumes:
       - .:/app
       - auth_data:/app/auth

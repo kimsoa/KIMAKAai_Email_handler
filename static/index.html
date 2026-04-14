@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KIMAKAai Email Handler</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- ── Loading ─────────────────────────────────────────────────── -->
+  <div id="view-loading" class="view active">
+    <div class="center-container">
+      <div class="spinner"></div>
+      <p>Loading…</p>
+    </div>
+  </div>
+
+  <!-- ── Setup Wizard ─────────────────────────────────────────────── -->
+  <div id="view-setup" class="view">
+    <div class="wizard-container">
+
+      <header class="wizard-header">
+        <h1>📧 KIMAKAai Email Handler</h1>
+        <p class="subtitle">One-time Setup</p>
+      </header>
+
+      <div class="step-bar">
+        <div class="step" id="step-indicator-1"><span>1</span> Gmail Credentials</div>
+        <div class="step-divider"></div>
+        <div class="step" id="step-indicator-2"><span>2</span> Authorize Gmail</div>
+        <div class="step-divider"></div>
+        <div class="step" id="step-indicator-3"><span>3</span> AI API Key</div>
+      </div>
+
+      <!-- Step 1: Upload client_secret.json -->
+      <div id="setup-step-1" class="setup-card">
+        <h2>Step 1 — Upload Gmail Credentials</h2>
+        <p>
+          Download your <code>client_secret.json</code> from the
+          <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>
+          and upload it here. Make sure OAuth is configured as <strong>Desktop app</strong> type.
+        </p>
+        <div class="upload-area" id="upload-area">
+          <div class="upload-icon">📄</div>
+          <p>
+            Drag &amp; drop your <code>client_secret.json</code> here<br>
+            or <label for="file-input" class="link">browse files</label>
+          </p>
+          <input type="file" id="file-input" accept=".json" hidden />
+        </div>
+        <div id="upload-feedback" class="feedback hidden"></div>
+        <button id="btn-upload" class="btn btn-primary" disabled>Upload &amp; Continue</button>
+      </div>
+
+      <!-- Step 2: OAuth Authorization -->
+      <div id="setup-step-2" class="setup-card hidden">
+        <h2>Step 2 — Authorize Gmail Access</h2>
+        <p>
+          Click the button to generate an authorization URL, then open it in your browser.
+          After granting access, paste the full redirect URL from the address bar below.
+        </p>
+        <button id="btn-get-auth-url" class="btn btn-secondary">Generate Authorization URL</button>
+        <div id="auth-url-section" class="hidden" style="margin-top:16px">
+          <a id="auth-url-link" href="#" target="_blank" class="auth-link">🔗 Open Authorization Page</a>
+          <p class="hint">
+            After authorizing, your browser will show <em>"This site can't be reached"</em> — that is
+            <strong>expected</strong>. Copy the full URL from the address bar and paste it below.
+          </p>
+          <div class="input-group">
+            <input type="text" id="redirect-url-input"
+                   placeholder="http://localhost/?code=4/0A…&amp;scope=…" />
+            <button id="btn-submit-callback" class="btn btn-primary">Submit</button>
+          </div>
+          <div id="callback-feedback" class="feedback hidden"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: API Key -->
+      <div id="setup-step-3" class="setup-card hidden">
+        <h2>Step 3 — Gemini AI API Key</h2>
+        <p>
+          Enter your
+          <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio API key</a>
+          to enable intelligent email processing.
+        </p>
+        <div class="input-group">
+          <input type="password" id="api-key-input" placeholder="AIza…" />
+          <button id="btn-save-api-key" class="btn btn-primary">Save &amp; Finish</button>
+        </div>
+        <div id="api-key-feedback" class="feedback hidden"></div>
+      </div>
+
+      <!-- Done -->
+      <div id="setup-done" class="setup-card hidden text-center">
+        <div class="success-icon">✅</div>
+        <h2>All Set!</h2>
+        <p>Your Email Handler is configured and ready to use.</p>
+        <button id="btn-go-inbox" class="btn btn-primary">Open Inbox</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Inbox ────────────────────────────────────────────────────── -->
+  <div id="view-inbox" class="view">
+    <div class="inbox-layout">
+
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>📧 Email Handler</h2>
+        </div>
+        <nav>
+          <button class="nav-item active" id="nav-inbox">Inbox</button>
+        </nav>
+        <div class="sidebar-actions">
+          <button id="btn-fetch" class="btn btn-action">Fetch Emails</button>
+          <button id="btn-process" class="btn btn-action">Process with AI</button>
+        </div>
+        <div id="job-status" class="job-status"></div>
+        <div class="sidebar-footer">
+          <button id="btn-reset" class="btn btn-danger-small">Reset Auth</button>
+        </div>
+      </aside>
+
+      <main class="email-list-container">
+        <div class="list-header">
+          <h3 id="email-count-title">Processed Emails</h3>
+          <button id="btn-refresh-list" class="btn btn-icon" title="Refresh">↻</button>
+        </div>
+        <div id="email-list">
+          <div class="empty-state">
+            <p>No processed emails yet.<br>Use the sidebar to fetch and process.</p>
+          </div>
+        </div>
+      </main>
+
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
