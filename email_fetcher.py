@@ -1,5 +1,6 @@
 import os
 import pickle
+from typing import Optional
 from urllib.parse import urlparse, parse_qs
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -10,11 +11,14 @@ import email
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-# Google deprecated the OOB (urn:ietf:wg:oauth:2.0:oob) copy-paste flow in Oct 2022.
-# The loopback redirect URI is the supported replacement for Desktop app type OAuth clients.
-# The user's browser will show "This site can't be reached" — that is expected.
-# They should copy the full URL from the address bar and paste it into the app.
+# Google deprecated the OOB flow in Oct 2022. Loopback redirect is the replacement.
+# The browser will show "This site can't be reached" — that is expected.
 REDIRECT_URI = 'http://localhost'
+
+# Streamlit recreates the flow object on every rerun, so the PKCE code_verifier
+# that was generated during authorization_url() would be lost. We persist it here
+# at module level (safe: single-user app) so it survives the Streamlit rerun.
+_oauth_code_verifier: Optional[str] = None
 
 
 def _extract_code(raw_input: str) -> str:
@@ -31,6 +35,7 @@ def _extract_code(raw_input: str) -> str:
 
 def get_gmail_service(client_secret_path='client_secret.json', token_path='token.pickle', auth_code=None):
     """Loads credentials from `token.pickle` if available, otherwise performs OAuth flow."""
+    global _oauth_code_verifier
     creds = None
     if os.path.exists(token_path):
         with open(token_path, 'rb') as token:
@@ -44,13 +49,22 @@ def get_gmail_service(client_secret_path='client_secret.json', token_path='token
                 return None, None  # Indicate that client secret is missing
 
             flow = InstalledAppFlow.from_client_secrets_file(client_secret_path, SCOPES)
-            flow.redirect_uri = REDIRECT_URI  # fixes Error 400: invalid_request / OOB flow deprecation
+            flow.redirect_uri = REDIRECT_URI
             if auth_code:
-                code = _extract_code(auth_code)
-                flow.fetch_token(code=code)
+                raw = auth_code.strip()
+                verifier = _oauth_code_verifier
+                _oauth_code_verifier = None  # reset after single use
+                # Extract just the code (handles both full URL and bare code).
+                # Using code= instead of authorization_response= avoids state mismatch
+                # because the flow object is recreated fresh on each Streamlit rerun.
+                code = _extract_code(raw)
+                flow.fetch_token(code=code, code_verifier=verifier)
                 creds = flow.credentials
             else:
                 auth_url, _ = flow.authorization_url(prompt='consent')
+                # Capture code_verifier if the library generated one for PKCE.
+                # Must be stored now — the flow object is recreated on next Streamlit rerun.
+                _oauth_code_verifier = getattr(flow.oauth2session._client, 'code_verifier', None)
                 return None, auth_url
 
         with open(token_path, 'wb') as token:

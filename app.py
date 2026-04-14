@@ -92,17 +92,37 @@ def render_settings_page():
         
         if auth_url:
             st.warning("⚠️ You uploaded the credentials, but you must now authorize the application.")
-            st.markdown(f"""
-            ### Authorization Steps:
-            1. **[Click here to authorize the application]({auth_url})**
-            2. Sign in with the Gmail account you want to triage.
-            3. If you see a **"Google hasn't verified this app"** warning, click **Advanced** → **Go to Email Triager (unsafe)**.
-            4. Grant the required permissions and click **Continue**.
-            5. Your browser will redirect to `http://localhost` and show **"This site can't be reached"** — this is completely normal.
-            6. **Copy the full URL from your browser's address bar** (it looks like `http://localhost/?code=4/0A...`) and paste it below.
+
+            st.info("""
+            📋 **Quick Summary of what will happen:**
+            
+            You will click the link below → sign in → your browser will show **\'This site can\'t be reached\'**.
+            
+            ✅ **That \'error\' page IS the success!** The code you need is hidden in the browser\'s address bar URL.
+            
+            Copy that URL and paste it in the box below. That\'s it!
             """)
 
-            auth_code_input = st.text_input("🔑 Paste the full redirect URL (http://localhost/?code=...) here:")
+            st.markdown(f"""
+            ### Step-by-Step Authorization:
+            **Step 1** — [👉 Click here to open the Google sign-in page]({auth_url})
+            
+            **Step 2** — Sign in with the Gmail account you want to triage.
+            
+            **Step 3** — If you see **"Google hasn\'t verified this app"**, click **Advanced** → **Go to Email Triager (unsafe)**.
+            
+            **Step 4** — Grant the required permissions and click **Continue** / **Allow**.
+            
+            **Step 5** — Your browser will go to `http://localhost` and show a page saying **"This site can\'t be reached"** or **"ERR_CONNECTION_REFUSED"**.
+            
+            > 🟢 **THIS IS CORRECT — DO NOT try to refresh or fix it.** This page confirms Google sent your login code.
+            
+            **Step 6** — Look at your browser\'s **address bar** (where you type website URLs). You will see a long URL starting with `http://localhost/?state=...&code=4/0A...`
+            
+            **Step 7** — Select the entire URL from the address bar, **copy it** (Ctrl+C or Cmd+C), and paste it in the box below.
+            """)
+
+            auth_code_input = st.text_input("🔑 Step 7 — Paste the full URL from your browser address bar here (starts with http://localhost/?...):")
             if st.button("Connect Account"):
                 st.session_state["auth_code"] = auth_code_input
                 st.rerun()
