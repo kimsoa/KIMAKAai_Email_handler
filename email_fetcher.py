@@ -62,9 +62,10 @@ def get_gmail_service(client_secret_path='client_secret.json', token_path='token
                 creds = flow.credentials
             else:
                 auth_url, _ = flow.authorization_url(prompt='consent')
-                # Capture code_verifier if the library generated one for PKCE.
-                # Must be stored now — the flow object is recreated on next Streamlit rerun.
-                _oauth_code_verifier = getattr(flow.oauth2session._client, 'code_verifier', None)
+                # flow.code_verifier is set by InstalledAppFlow.authorization_url()
+                # when autogenerate_code_verifier=True (the default). It lives on the
+                # flow object itself — NOT on flow.oauth2session._client.
+                _oauth_code_verifier = flow.code_verifier
                 return None, auth_url
 
         with open(token_path, 'wb') as token:
