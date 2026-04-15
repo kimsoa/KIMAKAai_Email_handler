@@ -81,12 +81,32 @@ def _normalize_json_response(response_str):
     return json.loads(clean.strip())
 
 
+def _container_gateway() -> str:
+    """Return the container's default-route gateway IP, or '' on error.
+    Reads /proc/net/route — works in any Linux container without external tools."""
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                parts = line.strip().split()
+                # Default route: Destination=00000000, Flags include 0x0002 (gateway), Mask=00000000
+                if len(parts) >= 3 and parts[1] == "00000000" and parts[7] == "00000000":
+                    gw_hex = parts[2]
+                    gw_bytes = bytes.fromhex(gw_hex)[::-1]  # little-endian → big-endian
+                    return ".".join(str(b) for b in gw_bytes)
+    except Exception:
+        pass
+    return ""
+
+
 def _ollama_base_candidates(base_url=""):
     seed = (base_url or "").strip()
+    gw = _container_gateway()
+    gw_candidate = f"http://{gw}:11434" if gw else ""
     candidates = [
         seed,
         os.getenv("OLLAMA_BASE_URL", "").strip(),
         DEFAULT_OLLAMA_BASE_URL,
+        gw_candidate,          # container's actual default-route gateway (works across any Docker network)
         "http://172.17.0.1:11434",
         "http://localhost:11434",
     ]
