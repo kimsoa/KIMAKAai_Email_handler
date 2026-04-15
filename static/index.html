@@ -133,6 +133,7 @@
           <button class="nav-item active" id="nav-inbox" title="Inbox">📥</button>
         </nav>
         <div class="sidebar-footer">
+          <button id="btn-settings" class="btn btn-icon sidebar-icon-btn" title="AI Provider Settings">⚙️</button>
           <button id="btn-reset" class="btn btn-icon sidebar-icon-btn" title="Reset Authentication">🔑</button>
         </div>
       </aside>
@@ -169,6 +170,45 @@
 
       </div>
 
+    </div>
+  </div>
+
+  <!-- ── Settings Modal ──────────────────────────────────────────── -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>⚙️ AI Provider Settings</h3>
+        <button id="btn-close-settings" class="btn btn-icon" title="Close">✕</button>
+      </div>
+
+      <div class="field-stack">
+        <label for="settings-provider-select">Provider</label>
+        <select id="settings-provider-select"></select>
+      </div>
+
+      <div class="field-stack">
+        <label for="settings-model-select">Model</label>
+        <div class="input-group">
+          <select id="settings-model-select"></select>
+          <button id="settings-btn-refresh-models" class="btn btn-secondary" type="button">↻ Refresh</button>
+        </div>
+        <input type="text" id="settings-model-manual" placeholder="Or type model name manually (optional)" />
+      </div>
+
+      <div class="field-stack">
+        <label for="settings-base-url">Base URL <span class="hint-inline">(optional)</span></label>
+        <input type="text" id="settings-base-url" placeholder="http://host.docker.internal:11434" />
+      </div>
+
+      <div class="field-stack" id="settings-api-key-group">
+        <label for="settings-api-key">API Key</label>
+        <input type="password" id="settings-api-key" placeholder="Enter provider API key" />
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-save-settings" class="btn btn-primary">Save</button>
+      </div>
+      <div id="settings-feedback" class="feedback hidden"></div>
     </div>
   </div>
 

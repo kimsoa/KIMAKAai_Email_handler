@@ -638,5 +638,123 @@ document.getElementById('email-detail').addEventListener('click', e => {
   localStorage.setItem('cards-layout', next);
 });
 
+// ── Settings Modal ────────────────────────────────────────────────────────────
+
+let _settingsProviders = [];
+let _settingsModelsMap = {};
+
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('btn-close-settings').addEventListener('click', closeSettings);
+document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+document.getElementById('settings-btn-refresh-models').addEventListener('click', initSettingsModal);
+document.getElementById('settings-provider-select').addEventListener('change', onSettingsProviderChange);
+document.getElementById('settings-api-key').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveSettings();
+});
+
+// Close on backdrop click
+document.getElementById('settings-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('settings-modal')) closeSettings();
+});
+
+function openSettings() {
+  document.getElementById('settings-modal').classList.remove('hidden');
+  initSettingsModal();
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.add('hidden');
+  hideFeedback('settings-feedback');
+}
+
+async function initSettingsModal() {
+  hideFeedback('settings-feedback');
+  const btn = document.getElementById('settings-btn-refresh-models');
+  btn.disabled = true;
+  try {
+    const data = await api('GET', '/api/llm/providers');
+    _settingsProviders = data.providers || [];
+    _settingsModelsMap = data.models || {};
+    const current = data.current || {};
+
+    const providerSelect = document.getElementById('settings-provider-select');
+    providerSelect.innerHTML = _settingsProviders
+      .map(p => `<option value="${escHtml(p.id)}">${escHtml(p.label)}</option>`)
+      .join('');
+
+    const selectedProvider = current.provider || (_settingsProviders[0] && _settingsProviders[0].id) || 'ollama';
+    providerSelect.value = selectedProvider;
+    onSettingsProviderChange();
+
+    if (current.model) {
+      const modelSelect = document.getElementById('settings-model-select');
+      const hasMatch = Array.from(modelSelect.options).some(o => o.value === current.model);
+      if (hasMatch) {
+        modelSelect.value = current.model;
+      } else {
+        document.getElementById('settings-model-manual').value = current.model;
+      }
+    }
+  } catch (e) {
+    showFeedback('settings-feedback', `Error loading providers: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function onSettingsProviderChange() {
+  const provider = document.getElementById('settings-provider-select').value;
+  const providerMeta = _settingsProviders.find(p => p.id === provider) || {};
+
+  const modelSelect = document.getElementById('settings-model-select');
+  const models = _settingsModelsMap[provider] || [];
+  modelSelect.innerHTML = models.length
+    ? models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')
+    : '<option value="">No models discovered — type manually below</option>';
+
+  const apiKeyGroup = document.getElementById('settings-api-key-group');
+  const apiKeyInput = document.getElementById('settings-api-key');
+  const baseUrlInput = document.getElementById('settings-base-url');
+
+  apiKeyGroup.classList.toggle('hidden', !providerMeta.api_key_required);
+  apiKeyInput.value = '';
+  apiKeyInput.placeholder = provider === 'gemini' ? 'AIza…' : 'Enter provider API key';
+  baseUrlInput.value = providerMeta.base_url || '';
+}
+
+async function saveSettings() {
+  const provider = document.getElementById('settings-provider-select').value;
+  const selectedModel = document.getElementById('settings-model-select').value.trim();
+  const manualModel = document.getElementById('settings-model-manual').value.trim();
+  const model = manualModel || selectedModel;
+  const apiKey = document.getElementById('settings-api-key').value.trim();
+  const baseUrl = document.getElementById('settings-base-url').value.trim();
+
+  const providerMeta = _settingsProviders.find(p => p.id === provider) || {};
+  if (providerMeta.api_key_required && !apiKey) {
+    showFeedback('settings-feedback', 'API key is required for this provider.', 'error');
+    return;
+  }
+  if (!model) {
+    showFeedback('settings-feedback', 'Please select or type a model.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-settings');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  hideFeedback('settings-feedback');
+
+  try {
+    await api('POST', '/api/settings/llm', { provider, model, api_key: apiKey, base_url: baseUrl });
+    showFeedback('settings-feedback', '✅ Settings saved!', 'success');
+    setTimeout(closeSettings, 900);
+  } catch (e) {
+    showFeedback('settings-feedback', `Error: ${e.message}`, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);

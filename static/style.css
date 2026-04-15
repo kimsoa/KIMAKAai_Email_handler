@@ -772,3 +772,50 @@ a:hover { text-decoration: underline; }
 /* Demo/preview button variant */
 .btn-action-demo { color: #c4b5fd !important; }
 .btn-action-demo:hover { border-color: #c4b5fd !important; background: rgba(139,92,246,0.12) !important; }
+
+/* ── Settings Modal ──────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-overlay.hidden { display: none; }
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.modal-header h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.hint-inline {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
