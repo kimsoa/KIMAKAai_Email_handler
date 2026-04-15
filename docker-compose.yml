@@ -1,17 +1,26 @@
-version: '3.8'
 services:
   email-handler:
     build: .
+    restart: unless-stopped
     ports:
       - "8503:8000"
     environment:
       - AUTH_DIR=/app/auth
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     volumes:
-      - .:/app
       - auth_data:/app/auth
+      - raw_emails:/app/raw_emails
+      - processed_data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/jobs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
   auth_data:
+  raw_emails:
+  processed_data:
