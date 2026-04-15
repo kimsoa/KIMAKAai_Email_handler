@@ -4,6 +4,7 @@
 
 // ── State ────────────────────────────────────────────────────────────────────
 let _jobPollInterval = null;
+let _liveEmailPollInterval = null;
 let _selectedEmail = null;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -550,6 +551,17 @@ function startJobPolling() {
   _jobPollInterval = setInterval(updateJobStatus, 3000);
 }
 
+function startLiveEmailPoll() {
+  if (_liveEmailPollInterval) return;
+  _liveEmailPollInterval = setInterval(loadEmails, 2000);
+}
+
+function stopLiveEmailPoll() {
+  if (!_liveEmailPollInterval) return;
+  clearInterval(_liveEmailPollInterval);
+  _liveEmailPollInterval = null;
+}
+
 // ── Sidebar drawer ──────────────────────────────────────────────────────────
 
 function openSidebar() {
@@ -593,19 +605,30 @@ async function updateJobStatus() {
     }
 
     if (jobs.process.running) {
-      parts.push('<span>⏳ Processing with AI…</span>');
-    } else if (jobs.process.last) {
-      if (jobs.process.last.startsWith('error:')) {
-        const msg = jobs.process.last.replace('error:', '').trim();
-        parts.push(`<span class="job-error">❌ ${escHtml(msg)}</span>`);
-      } else {
-        parts.push(`<span>Process: ${escHtml(jobs.process.last)}</span>`);
+      const prog = (jobs.process.progress) || {};
+      const cur = prog.current || 0;
+      const tot = prog.total || 0;
+      const countText = tot > 0 ? ` ${cur} / ${tot}` : (cur > 0 ? ` ${cur}` : '');
+      parts.push(`<span>⏳ Processing${countText} emails…</span>`);
+      startLiveEmailPoll();
+    } else {
+      if (_liveEmailPollInterval) {
+        stopLiveEmailPoll();
+        loadEmails(); // final refresh once processing ends
+      }
+      if (jobs.process.last) {
+        if (jobs.process.last.startsWith('error:')) {
+          const msg = jobs.process.last.replace('error:', '').trim();
+          parts.push(`<span class="job-error">❌ ${escHtml(msg)}</span>`);
+        } else {
+          parts.push(`<span>Process: ${escHtml(jobs.process.last)}</span>`);
+        }
       }
     }
 
     document.getElementById('job-status').innerHTML = parts.join('\n');
 
-    // Auto-refresh list when a job just succeeded
+    // Auto-refresh list when a fetch job just succeeded
     if (jobs.fetch.last === 'success' || jobs.process.last === 'success') {
       loadEmails();
     }

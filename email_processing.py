@@ -428,7 +428,14 @@ def parse_raw_email(file_path):
     }
 
 
-def run_agentic_pipeline():
+def run_agentic_pipeline(on_progress=None):
+    """Process raw emails through the LLM pipeline.
+
+    Args:
+        on_progress: optional callable(current: int, total: int) invoked after
+                     every candidate email is handled (whether processed or skipped),
+                     useful for live progress tracking in the UI.
+    """
     print("Connecting to configured LLM provider…")
     llm_client = LLMClient()
     processor = SinglePassProcessor(llm_client)
@@ -453,31 +460,40 @@ def run_agentic_pipeline():
 
     files = [fn for fn in os.listdir(RAW_EMAILS_DIR) if fn.endswith(".txt")]
     new_files = [fn for fn in files if fn.replace(".txt", "") not in processed_ids]
-    print(f"Found {len(files)} raw emails. Processing {len(new_files)} new ones…")
+    total = len(new_files)
+    print(f"Found {len(files)} raw emails. Processing {total} new ones…")
 
-    for fname in new_files:
+    for current, fname in enumerate(new_files, 1):
         path = os.path.join(RAW_EMAILS_DIR, fname)
         email_data = parse_raw_email(path)
 
         # Skip draft-like messages if they somehow ended up in raw_emails
         subj = (email_data.get("subject") or "").strip().lower()
         if subj.startswith("draft") or subj.startswith("draft:"):
+            if on_progress:
+                on_progress(current, total)
             continue
 
         # Only process recent unread mail (yesterday + today by default)
         if not _is_recent_email(email_data.get("date", ""), path, recent_days):
+            if on_progress:
+                on_progress(current, total)
             continue
         print(f"\n→ {email_data['subject']}")
 
         result = processor.process(email_data)
         if not result:
             print("   [Error] Processing failed — skipping.")
+            if on_progress:
+                on_progress(current, total)
             continue
 
         final_record = {**email_data, **result}
         with open(PROCESSED_EMAILS_FILE, "a") as f:
             f.write(json.dumps(final_record) + "\n")
         print("   [Done] Saved.")
+        if on_progress:
+            on_progress(current, total)
 
 
 if __name__ == "__main__":

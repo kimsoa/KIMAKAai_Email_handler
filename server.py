@@ -21,7 +21,7 @@ app = FastAPI(title="KIMAKAai Email Handler")
 
 _jobs: dict = {
     "fetch": {"running": False, "last": None},
-    "process": {"running": False, "last": None},
+    "process": {"running": False, "last": None, "progress": {"current": 0, "total": 0}},
 }
 
 
@@ -423,8 +423,13 @@ def _run_fetch():
 
 def _run_process():
     _jobs["process"]["running"] = True
+    _jobs["process"]["progress"] = {"current": 0, "total": 0}
+
+    def _on_progress(current: int, total: int) -> None:
+        _jobs["process"]["progress"] = {"current": current, "total": total}
+
     try:
-        run_agentic_pipeline()
+        run_agentic_pipeline(on_progress=_on_progress)
         _jobs["process"]["last"] = "success"
     except Exception as e:
         _jobs["process"]["last"] = f"error: {e}"
