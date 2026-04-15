@@ -284,6 +284,149 @@ a:hover { text-decoration: underline; }
 /* ── Inbox Layout ───────────────────────────────────────────── */
 #view-inbox { flex-direction: row; overflow: hidden; }
 
+/* ── Sidebar Drawer ─────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100%;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 300;
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.sidebar.open {
+  transform: translateX(0);
+  box-shadow: 6px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+/* Backdrop */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 299;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+.sidebar-backdrop.hidden { display: none; }
+
+/* Drawer header */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-brand-text {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+/* Nav */
+.sidebar-nav {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.nav-item {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-item:hover  { background: var(--surface-2); color: var(--text); }
+.nav-item.active {
+  background: rgba(92, 124, 250, 0.15);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Footer */
+.sidebar-footer {
+  padding: 16px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.ai-status-chip {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: default;
+  transition: color 0.2s, border-color 0.2s;
+}
+.ai-status-chip.chip-ok {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.chip-provider {
+  font-weight: 600;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip-model {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+.sidebar-actions-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn-sidebar-action {
+  width: 100%;
+  height: 40px;
+  text-align: left;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-sidebar-action:hover { color: var(--text); border-color: var(--accent); }
+.btn-sidebar-danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* ── Main layout (sidebar is overlay — full width always) ──────────── */
 .inbox-layout {
   display: flex;
   flex: 1;
@@ -292,47 +435,6 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
 }
 
-.sidebar {
-  width: 56px;
-  min-width: 56px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 0;
-  gap: 4px;
-  overflow: hidden;
-}
-.sidebar-brand {
-  font-size: 1.3rem;
-  padding: 10px 0 12px;
-  width: 100%;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.nav-item {
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: var(--text-muted);
-  font-size: 1.1rem;
-  cursor: pointer;
-  text-align: center;
-  line-height: 40px;
-  transition: background 0.15s, color 0.15s;
-}
-.nav-item:hover  { background: var(--surface-2); color: var(--text); }
-.nav-item.active {
-  background: rgba(92, 124, 250, 0.15);
-  color: var(--accent);
-}
-
-/* .sidebar-actions kept for reference — buttons moved to list-toolbar */
 .job-status {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -347,58 +449,7 @@ a:hover { text-decoration: underline; }
   display: block;
   margin-top: 2px;
 }
-.sidebar-footer {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.sidebar-actions-row {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-.ai-status-chip {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  width: calc(100% - 8px);
-  max-width: 56px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  cursor: default;
-  transition: color 0.2s, border-color 0.2s;
-  overflow: hidden;
-}
-.ai-status-chip.chip-ok {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.chip-provider {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.chip-model {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  opacity: 0.8;
-}
+
 .settings-current-info {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -411,21 +462,7 @@ a:hover { text-decoration: underline; }
 .settings-current-info strong {
   color: var(--accent);
 }
-.sidebar-icon-btn {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 1rem;
-  line-height: 36px;
-  text-align: center;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.sidebar-icon-btn:hover { color: var(--danger); border-color: var(--danger); }
+
 
 /* ── Master-Detail Layout ───────────────────────────────────── */
 .inbox-body {

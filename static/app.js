@@ -550,6 +550,33 @@ function startJobPolling() {
   _jobPollInterval = setInterval(updateJobStatus, 3000);
 }
 
+// ── Sidebar drawer ──────────────────────────────────────────────────────────
+
+function openSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (sidebar)  sidebar.classList.add('open');
+  if (backdrop) backdrop.classList.remove('hidden');
+}
+
+function closeSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (sidebar)  sidebar.classList.remove('open');
+  if (backdrop) backdrop.classList.add('hidden');
+}
+
+function initSidebarDrawer() {
+  const btnOpen     = document.getElementById('btn-sidebar-open');
+  const btnClose    = document.getElementById('btn-sidebar-close');
+  const backdrop    = document.getElementById('sidebar-backdrop');
+  if (btnOpen)  btnOpen.addEventListener('click', openSidebar);
+  if (btnClose) btnClose.addEventListener('click', closeSidebar);
+  if (backdrop) backdrop.addEventListener('click', closeSidebar);
+  // Close on Escape
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+}
+
 async function updateJobStatus() {
   try {
     const jobs = await api('GET', '/api/jobs');
@@ -688,6 +715,9 @@ async function updateAiStatusChip() {
     chip.innerHTML = '<span class="chip-provider">AI</span><span class="chip-model">?</span>';
   }
 }
+
+// Initialize sidebar drawer
+initSidebarDrawer();
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 

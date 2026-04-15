@@ -125,29 +125,34 @@
 
   <!-- ── Inbox ────────────────────────────────────────────────────── -->
   <div id="view-inbox" class="view">
-    <div class="inbox-layout">
-
-      <aside class="sidebar">
-        <div class="sidebar-brand">📧</div>
-        <nav>
-          <button class="nav-item active" id="nav-inbox" title="Inbox">📥</button>
-        </nav>
-        <div class="sidebar-footer">
-          <div id="ai-status-chip" class="ai-status-chip" title="Active AI Provider">…</div>
-          <div class="sidebar-actions-row">
-            <button id="btn-settings" class="btn btn-icon sidebar-icon-btn" title="AI Provider Settings">⚙️</button>
-            <button id="btn-reset" class="btn btn-icon sidebar-icon-btn" title="Reset Authentication">🔑</button>
-          </div>
+    <!-- Sidebar Drawer ───────────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-brand-text">📧 KIMAKAai</span>
+        <button class="btn btn-icon" id="btn-sidebar-close" title="Close">✕</button>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" id="nav-inbox">📥 Inbox</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="ai-status-chip" class="ai-status-chip" title="Active AI Provider">…</div>
+        <div class="sidebar-actions-col">
+          <button id="btn-settings" class="btn btn-sidebar-action">⚙️ AI Settings</button>
+          <button id="btn-reset" class="btn btn-sidebar-action btn-sidebar-danger">🔑 Reset Auth</button>
         </div>
-      </aside>
+      </div>
+    </aside>
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
+    <div class="inbox-layout">
       <div class="inbox-body">
 
         <section class="email-list-panel">
           <div class="list-toolbar">
+            <button id="btn-sidebar-open" class="btn btn-toolbar" title="Menu">☰</button>
             <button id="btn-fetch"   class="btn btn-toolbar">🔄 Fetch</button>
             <button id="btn-process" class="btn btn-toolbar">⚡ Process</button>
-            <button id="btn-demo"    class="btn btn-toolbar btn-toolbar-demo" title="Load sample emails to preview the card UI">🎭 Demo</button>
+            <button id="btn-demo"    class="btn btn-toolbar btn-toolbar-demo" title="Load sample emails">🎭 Demo</button>
             <button id="btn-clear"   class="btn btn-toolbar btn-toolbar-danger">🗑 Clear</button>
           </div>
           <div id="job-status" class="job-status"></div>
