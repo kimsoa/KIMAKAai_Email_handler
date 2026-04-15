@@ -24,4 +24,4 @@ fi
 echo "Building and running the Email Handler application..."
 echo "This may take a few minutes..."
 
-docker compose up --build
+docker compose --env-file /dev/null up --build

@@ -6,7 +6,6 @@ import threading
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from dotenv import set_key, load_dotenv
 
 from email_fetcher import get_gmail_service, fetch_unread_emails_and_save
 from email_processing import run_agentic_pipeline, resolve_llm_config, list_provider_models
@@ -16,9 +15,6 @@ CLIENT_SECRET_PATH = os.path.join(AUTH_DIR, "client_secret.json")
 TOKEN_PATH = os.path.join(AUTH_DIR, "token.pickle")
 SETTINGS_FILE = os.path.join(AUTH_DIR, "settings.json")
 PROCESSED_EMAILS_FILE = "processed_emails.jsonl"
-ENV_FILE = ".env"
-
-load_dotenv(ENV_FILE)
 os.makedirs(AUTH_DIR, exist_ok=True)
 
 app = FastAPI(title="KIMAKAai Email Handler")
@@ -55,7 +51,7 @@ def get_status():
     return {
         "has_client_secret": os.path.exists(CLIENT_SECRET_PATH),
         "authenticated": os.path.exists(TOKEN_PATH),
-        "has_api_key": bool(os.getenv("LLM_API_KEY", "").strip()),
+        "has_api_key": bool((llm.get("api_key") or "").strip()),
         "llm_provider": provider,
         "llm_model": llm.get("model", ""),
         "llm_base_url": llm.get("base_url", ""),
@@ -87,11 +83,16 @@ def save_api_key(body: ApiKeyBody):
     key = body.api_key.strip()
     if not key:
         raise HTTPException(status_code=400, detail="API key cannot be empty")
-    set_key(ENV_FILE, "LLM_API_KEY", key)
+    current = _read_settings_file()
+    current["api_key"] = key
+    if not (current.get("provider") or os.getenv("LLM_PROVIDER", "").strip()):
+        current["provider"] = "gemini"
+    _write_settings_file(current)
+
+    # Update in-process environment for immediate effect
     os.environ["LLM_API_KEY"] = key
-    if not os.getenv("LLM_PROVIDER", "").strip():
-        set_key(ENV_FILE, "LLM_PROVIDER", "gemini")
-        os.environ["LLM_PROVIDER"] = "gemini"
+    if current.get("provider"):
+        os.environ["LLM_PROVIDER"] = current["provider"]
     return {"ok": True}
 
 
