@@ -107,31 +107,58 @@ def get_llm_providers():
         },
         {
             "id": "openai",
-            "label": "OpenAI-Compatible",
+            "label": "OpenAI",
             "api_key_required": True,
-            "base_url": cfg.get("base_url") if cfg.get("provider") == "openai" else os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "openai" else "https://api.openai.com/v1",
+        },
+        {
+            "id": "anthropic",
+            "label": "Anthropic (Claude)",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "anthropic" else "https://api.anthropic.com/v1",
+        },
+        {
+            "id": "groq",
+            "label": "Groq",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "groq" else "https://api.groq.com/openai/v1",
+        },
+        {
+            "id": "mistral",
+            "label": "Mistral",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "mistral" else "https://api.mistral.ai/v1",
+        },
+        {
+            "id": "openrouter",
+            "label": "OpenRouter",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "openrouter" else "https://openrouter.ai/api/v1",
+        },
+        {
+            "id": "cohere",
+            "label": "Cohere",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "cohere" else "https://api.cohere.com/compatibility/v1",
+        },
+        {
+            "id": "custom",
+            "label": "Custom / OpenAI-Compatible",
+            "api_key_required": False,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "custom" else "",
         },
     ]
 
     current_provider = cfg.get("provider", "ollama")
 
-    model_map = {}
-    for provider in ("ollama", "gemini", "openai"):
-        if provider == "gemini":
-            key_for_provider = os.getenv("LLM_API_KEY", "").strip()
-            base_for_provider = ""
-        elif provider == "openai":
-            key_for_provider = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
-            base_for_provider = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
-        else:
-            key_for_provider = ""
-            base_for_provider = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").strip()
-
-        if provider == current_provider:
-            key_for_provider = cfg.get("api_key", key_for_provider)
-            base_for_provider = cfg.get("base_url", base_for_provider)
-
-        model_map[provider] = list_provider_models(provider, api_key=key_for_provider, base_url=base_for_provider)
+    # Only fetch models for the currently-saved provider (uses saved credentials).
+    # All other providers start empty; the Refresh button fetches on demand.
+    model_map = {p["id"]: [] for p in providers}
+    model_map[current_provider] = list_provider_models(
+        current_provider,
+        api_key=cfg.get("api_key", ""),
+        base_url=cfg.get("base_url", ""),
+    )
 
     return {
         "providers": providers,
@@ -140,10 +167,33 @@ def get_llm_providers():
     }
 
 
+_ALL_PROVIDERS = {"ollama", "gemini", "openai", "anthropic", "groq", "mistral", "openrouter", "cohere", "custom"}
+_COMPAT_PROVIDERS = {"openai", "anthropic", "groq", "mistral", "openrouter", "cohere", "custom"}
+
+
+class LlmModelsBody(BaseModel):
+    provider: str
+    api_key: str = ""
+    base_url: str = ""
+
+
+@app.post("/api/llm/models")
+def get_provider_models_on_demand(body: LlmModelsBody):
+    """Fetch models for a provider using the key/url supplied in the request body.
+    Used by the Refresh button so it sends the currently-typed key, not saved config.
+    """
+    models = list_provider_models(
+        body.provider,
+        api_key=(body.api_key or "").strip(),
+        base_url=(body.base_url or "").strip(),
+    )
+    return {"models": models}
+
+
 @app.post("/api/settings/llm")
 def save_llm_settings(body: LlmSettingsBody):
     provider = (body.provider or "").strip().lower()
-    if provider not in ("ollama", "gemini", "openai"):
+    if provider not in _ALL_PROVIDERS:
         raise HTTPException(status_code=400, detail="Unsupported provider")
 
     model = (body.model or "").strip()
@@ -168,14 +218,19 @@ def save_llm_settings(body: LlmSettingsBody):
         set_key(ENV_FILE, "LLM_API_KEY", api_key)
         os.environ["LLM_API_KEY"] = api_key
 
-    elif provider == "openai":
-        if not api_key:
-            raise HTTPException(status_code=400, detail="OpenAI provider requires API key")
-        set_key(ENV_FILE, "OPENAI_API_KEY", api_key)
-        os.environ["OPENAI_API_KEY"] = api_key
+    elif provider in _COMPAT_PROVIDERS:
+        if not api_key and provider != "custom":
+            raise HTTPException(status_code=400, detail=f"{provider.capitalize()} provider requires API key")
+        if api_key:
+            set_key(ENV_FILE, "LLM_API_KEY", api_key)
+            os.environ["LLM_API_KEY"] = api_key
+            # Keep legacy env var for openai for backwards-compat
+            if provider == "openai":
+                set_key(ENV_FILE, "OPENAI_API_KEY", api_key)
+                os.environ["OPENAI_API_KEY"] = api_key
         if base_url:
-            set_key(ENV_FILE, "OPENAI_BASE_URL", base_url)
-            os.environ["OPENAI_BASE_URL"] = base_url
+            set_key(ENV_FILE, "LLM_BASE_URL", base_url)
+            os.environ["LLM_BASE_URL"] = base_url
 
     return {"ok": True}
 

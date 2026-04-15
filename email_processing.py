@@ -25,8 +25,31 @@ if not hasattr(genai.GenerationConfig, "MediaResolution"):
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_OLLAMA_MODEL = "phi4-mini"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MISTRAL_MODEL = "mistral-small-latest"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
+DEFAULT_COHERE_MODEL = "command-r-plus"
 DEFAULT_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 DEFAULT_OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
+DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_COHERE_BASE_URL = "https://api.cohere.com/compatibility/v1"
+
+# Providers that use a standard OpenAI-compatible /models + /chat/completions API
+_OPENAI_COMPAT_PROVIDERS = {"openai", "anthropic", "groq", "mistral", "openrouter", "cohere", "custom"}
+
+_PROVIDER_DEFAULTS = {
+    "openai":     {"base_url": DEFAULT_OPENAI_BASE_URL,     "model": DEFAULT_OPENAI_MODEL},
+    "anthropic":  {"base_url": DEFAULT_ANTHROPIC_BASE_URL,  "model": DEFAULT_ANTHROPIC_MODEL},
+    "groq":       {"base_url": DEFAULT_GROQ_BASE_URL,       "model": DEFAULT_GROQ_MODEL},
+    "mistral":    {"base_url": DEFAULT_MISTRAL_BASE_URL,    "model": DEFAULT_MISTRAL_MODEL},
+    "openrouter": {"base_url": DEFAULT_OPENROUTER_BASE_URL, "model": DEFAULT_OPENROUTER_MODEL},
+    "cohere":     {"base_url": DEFAULT_COHERE_BASE_URL,     "model": DEFAULT_COHERE_MODEL},
+    "custom":     {"base_url": "",                          "model": ""},
+}
 RAW_EMAILS_DIR = "raw_emails"
 PROCESSED_EMAILS_FILE = "processed_emails.jsonl"
 
@@ -100,17 +123,6 @@ def list_provider_models(provider, api_key="", base_url=""):
             models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
             return sorted(models)
 
-        if provider == "openai":
-            if not api_key:
-                return []
-            openai_url = (base_url or DEFAULT_OPENAI_BASE_URL).rstrip("/")
-            data = _read_json_response(
-                f"{openai_url}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-            models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
-            return sorted(models)
-
         if provider == "gemini":
             if not api_key:
                 return []
@@ -121,6 +133,29 @@ def list_provider_models(provider, api_key="", base_url=""):
                 if name.startswith("models/") and "generateContent" in getattr(model, "supported_generation_methods", []):
                     models.append(name.replace("models/", ""))
             return sorted(models)
+
+        # All OpenAI-compatible providers share the same /models listing path
+        if provider in _OPENAI_COMPAT_PROVIDERS:
+            if not api_key and provider != "custom":
+                return []
+            default_base = _PROVIDER_DEFAULTS.get(provider, {}).get("base_url", "")
+            effective_url = (base_url or default_base).rstrip("/")
+            if not effective_url:
+                return []
+            headers = {"Authorization": f"Bearer {api_key}"}
+            # OpenRouter requires an extra header
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://github.com/kimsoa/KIMAKAai_Email_handler"
+            data = _read_json_response(f"{effective_url}/models", headers=headers)
+            # Some providers return {data: [...]} (OpenAI style), others return {models: [...]}
+            items = data.get("data") or data.get("models") or []
+            models = []
+            for item in items:
+                mid = item.get("id") or item.get("name") or ""
+                if mid:
+                    models.append(mid)
+            return sorted(models)
+
     except Exception:
         return []
 
@@ -135,33 +170,28 @@ def resolve_llm_config():
     if provider == "gemini":
         api_key = os.getenv("LLM_API_KEY", "").strip()
         model = os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-        return {
-            "provider": provider,
-            "api_key": api_key,
-            "model": model,
-            "base_url": "",
-        }
+        return {"provider": provider, "api_key": api_key, "model": model, "base_url": ""}
 
-    if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
-        model = os.getenv("LLM_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
-        base_url = os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL).strip() or DEFAULT_OPENAI_BASE_URL
-        return {
-            "provider": provider,
-            "api_key": api_key,
-            "model": model,
-            "base_url": base_url,
-        }
+    if provider == "ollama":
+        model = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
+        base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
+        return {"provider": "ollama", "api_key": "", "model": model, "base_url": base_url}
 
-    # Default to ollama for local/offline processing.
+    if provider in _OPENAI_COMPAT_PROVIDERS:
+        defaults = _PROVIDER_DEFAULTS.get(provider, {})
+        # API key env var: prefer OPENAI_API_KEY for openai, else LLM_API_KEY
+        if provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
+        else:
+            api_key = os.getenv("LLM_API_KEY", "").strip()
+        model = os.getenv("LLM_MODEL", defaults.get("model", "")).strip() or defaults.get("model", "")
+        base_url = os.getenv("LLM_BASE_URL", defaults.get("base_url", "")).strip() or defaults.get("base_url", "")
+        return {"provider": provider, "api_key": api_key, "model": model, "base_url": base_url}
+
+    # Fallback to ollama
     model = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
     base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
-    return {
-        "provider": "ollama",
-        "api_key": "",
-        "model": model,
-        "base_url": base_url,
-    }
+    return {"provider": "ollama", "api_key": "", "model": model, "base_url": base_url}
 
 
 class LLMClient:
@@ -181,10 +211,17 @@ class LLMClient:
                 model=self.model,
                 google_api_key=self.api_key,
                 temperature=0,
-                max_retries=1,  # Fail fast — don't spin forever on quota errors
+                max_retries=1,
             )
         else:
             self.llm = None
+
+        if self.provider in _OPENAI_COMPAT_PROVIDERS and not self.api_key and self.provider != "custom":
+            raise ValueError(f"API key required for provider '{self.provider}'.")
+        if self.provider in _OPENAI_COMPAT_PROVIDERS and not self.base_url:
+            self.base_url = _PROVIDER_DEFAULTS.get(self.provider, {}).get("base_url", "")
+        if not self.model:
+            self.model = _PROVIDER_DEFAULTS.get(self.provider, {}).get("model", "")
 
     def invoke_json(self, system_prompt, user_prompt_text):
         """Invoke LLM and return parsed JSON, or None on failure."""
@@ -212,7 +249,7 @@ class LLMClient:
                 data = _ollama_request_json(self.base_url, "/api/generate", method="POST", payload=payload)
                 return _normalize_json_response(data.get("response", "{}"))
 
-            if self.provider == "openai":
+            if self.provider in _OPENAI_COMPAT_PROVIDERS:
                 payload = {
                     "model": self.model,
                     "temperature": 0,
@@ -222,10 +259,16 @@ class LLMClient:
                         {"role": "user", "content": user_prompt_text},
                     ],
                 }
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+                if self.provider == "openrouter":
+                    headers["HTTP-Referer"] = "https://github.com/kimsoa/KIMAKAai_Email_handler"
+                    headers["X-Title"] = "KIMAKAai Email Handler"
+                # Anthropic and Mistral need explicit JSON mode via response_format,
+                # which they both support in their OpenAI-compat layer.
                 data = _read_json_response(
                     f"{self.base_url.rstrip('/')}/chat/completions",
                     method="POST",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=headers,
                     payload=payload,
                 )
                 response_str = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")

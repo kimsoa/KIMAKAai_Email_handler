@@ -186,13 +186,9 @@
         <select id="settings-provider-select"></select>
       </div>
 
-      <div class="field-stack">
-        <label for="settings-model-select">Model</label>
-        <div class="input-group">
-          <select id="settings-model-select"></select>
-          <button id="settings-btn-refresh-models" class="btn btn-secondary" type="button">↻ Refresh</button>
-        </div>
-        <input type="text" id="settings-model-manual" placeholder="Or type model name manually (optional)" />
+      <div class="field-stack" id="settings-api-key-group">
+        <label for="settings-api-key">API Key</label>
+        <input type="password" id="settings-api-key" placeholder="Enter provider API key" />
       </div>
 
       <div class="field-stack">
@@ -200,9 +196,13 @@
         <input type="text" id="settings-base-url" placeholder="http://host.docker.internal:11434" />
       </div>
 
-      <div class="field-stack" id="settings-api-key-group">
-        <label for="settings-api-key">API Key</label>
-        <input type="password" id="settings-api-key" placeholder="Enter provider API key" />
+      <div class="field-stack">
+        <label for="settings-model-select">Model</label>
+        <div class="input-group">
+          <select id="settings-model-select"></select>
+          <button id="settings-btn-refresh-models" class="btn btn-secondary" type="button">↻ Refresh</button>
+        </div>
+        <input type="text" id="settings-model-manual" placeholder="Or type model name manually (optional)" />
       </div>
 
       <div class="modal-actions">

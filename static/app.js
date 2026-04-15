@@ -646,7 +646,7 @@ let _settingsModelsMap = {};
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('btn-close-settings').addEventListener('click', closeSettings);
 document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
-document.getElementById('settings-btn-refresh-models').addEventListener('click', initSettingsModal);
+document.getElementById('settings-btn-refresh-models').addEventListener('click', refreshSettingsModels);
 document.getElementById('settings-provider-select').addEventListener('change', onSettingsProviderChange);
 document.getElementById('settings-api-key').addEventListener('keydown', e => {
   if (e.key === 'Enter') saveSettings();
@@ -702,6 +702,24 @@ async function initSettingsModal() {
   }
 }
 
+async function refreshSettingsModels() {
+  const provider = document.getElementById('settings-provider-select').value;
+  const apiKey = document.getElementById('settings-api-key').value.trim();
+  const baseUrl = document.getElementById('settings-base-url').value.trim();
+  const btn = document.getElementById('settings-btn-refresh-models');
+  btn.disabled = true;
+  hideFeedback('settings-feedback');
+  try {
+    const data = await api('POST', '/api/llm/models', { provider, api_key: apiKey, base_url: baseUrl });
+    _settingsModelsMap[provider] = data.models || [];
+    onSettingsProviderChange();
+  } catch (e) {
+    showFeedback('settings-feedback', `Could not fetch models: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function onSettingsProviderChange() {
   const provider = document.getElementById('settings-provider-select').value;
   const providerMeta = _settingsProviders.find(p => p.id === provider) || {};
@@ -710,7 +728,7 @@ function onSettingsProviderChange() {
   const models = _settingsModelsMap[provider] || [];
   modelSelect.innerHTML = models.length
     ? models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')
-    : '<option value="">No models discovered — type manually below</option>';
+    : '<option value="">— Enter API key then click ↻ Refresh —</option>';
 
   const apiKeyGroup = document.getElementById('settings-api-key-group');
   const apiKeyInput = document.getElementById('settings-api-key');
