@@ -339,6 +339,7 @@ function showInbox() {
   show('view-inbox');
   loadEmails();
   startJobPolling();
+  updateAiStatusChip();
 }
 
 async function loadEmails() {
@@ -638,6 +639,23 @@ document.getElementById('email-detail').addEventListener('click', e => {
   localStorage.setItem('cards-layout', next);
 });
 
+// ── AI Status Chip ────────────────────────────────────────────────────────────
+
+async function updateAiStatusChip() {
+  const chip = document.getElementById('ai-status-chip');
+  if (!chip) return;
+  try {
+    const s = await api('GET', '/api/status');
+    const provider = s.llm_provider || '—';
+    const model = s.llm_model || '—';
+    chip.textContent = `${provider}\n${model}`;
+    chip.title = `Active AI: ${provider} / ${model}`;
+    chip.classList.toggle('chip-ok', !!s.llm_configured);
+  } catch {
+    chip.textContent = 'AI\n?';
+  }
+}
+
 // ── Settings Modal ────────────────────────────────────────────────────────────
 
 let _settingsProviders = [];
@@ -686,6 +704,7 @@ async function initSettingsModal() {
     providerSelect.value = selectedProvider;
     onSettingsProviderChange();
 
+    // Restore saved model after provider change resets the model fields
     if (current.model) {
       const modelSelect = document.getElementById('settings-model-select');
       const hasMatch = Array.from(modelSelect.options).some(o => o.value === current.model);
@@ -694,6 +713,14 @@ async function initSettingsModal() {
       } else {
         document.getElementById('settings-model-manual').value = current.model;
       }
+    }
+
+    // Show currently active settings banner
+    if (current.provider) {
+      const provLabel = (_settingsProviders.find(p => p.id === current.provider) || {}).label || current.provider;
+      const activeText = current.model ? `${provLabel} / ${current.model}` : provLabel;
+      document.getElementById('settings-current-text').innerHTML = `Active: <strong>${escHtml(activeText)}</strong>`;
+      document.getElementById('settings-current-info').classList.remove('hidden');
     }
   } catch (e) {
     showFeedback('settings-feedback', `Error loading providers: ${e.message}`, 'error');
@@ -738,6 +765,8 @@ function onSettingsProviderChange() {
   apiKeyInput.value = '';
   apiKeyInput.placeholder = provider === 'gemini' ? 'AIza…' : 'Enter provider API key';
   baseUrlInput.value = providerMeta.base_url || '';
+  // Clear stale model name so a previous provider's model name doesn't carry over
+  document.getElementById('settings-model-manual').value = '';
 }
 
 async function saveSettings() {
@@ -765,8 +794,10 @@ async function saveSettings() {
 
   try {
     await api('POST', '/api/settings/llm', { provider, model, api_key: apiKey, base_url: baseUrl });
-    showFeedback('settings-feedback', '✅ Settings saved!', 'success');
-    setTimeout(closeSettings, 900);
+    const provLabel = (_settingsProviders.find(p => p.id === provider) || {}).label || provider;
+    showFeedback('settings-feedback', `✅ Now using: ${provLabel} / ${model}`, 'success');
+    updateAiStatusChip();
+    setTimeout(closeSettings, 1200);
   } catch (e) {
     showFeedback('settings-feedback', `Error: ${e.message}`, 'error');
     btn.disabled = false;

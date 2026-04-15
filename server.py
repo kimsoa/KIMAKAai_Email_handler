@@ -14,6 +14,7 @@ from email_processing import run_agentic_pipeline, resolve_llm_config, list_prov
 AUTH_DIR = os.environ.get("AUTH_DIR", "/app/auth")
 CLIENT_SECRET_PATH = os.path.join(AUTH_DIR, "client_secret.json")
 TOKEN_PATH = os.path.join(AUTH_DIR, "token.pickle")
+SETTINGS_FILE = os.path.join(AUTH_DIR, "settings.json")
 PROCESSED_EMAILS_FILE = "processed_emails.jsonl"
 ENV_FILE = ".env"
 
@@ -28,11 +29,24 @@ _jobs: dict = {
 }
 
 
+def _read_settings_file() -> dict:
+    try:
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_settings_file(data: dict) -> None:
+    os.makedirs(AUTH_DIR, exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/status")
 def get_status():
-    load_dotenv(ENV_FILE, override=True)
     llm = resolve_llm_config()
     provider = llm.get("provider", "ollama")
     has_ai_config = bool(llm.get("model"))
@@ -200,37 +214,31 @@ def save_llm_settings(body: LlmSettingsBody):
     api_key = (body.api_key or "").strip()
     base_url = (body.base_url or "").strip()
 
-    set_key(ENV_FILE, "LLM_PROVIDER", provider)
-    os.environ["LLM_PROVIDER"] = provider
+    if provider == "gemini" and not api_key:
+        raise HTTPException(status_code=400, detail="Gemini provider requires API key")
+    if provider in _COMPAT_PROVIDERS and not api_key and provider != "custom":
+        raise HTTPException(status_code=400, detail=f"{provider.capitalize()} provider requires API key")
 
+    # Persist to auth volume JSON (writable named Docker volume)
+    current = _read_settings_file()
+    current["provider"] = provider
     if model:
-        set_key(ENV_FILE, "LLM_MODEL", model)
+        current["model"] = model
+    if api_key:
+        current["api_key"] = api_key
+    if base_url:
+        current["base_url"] = base_url
+    elif "base_url" in current and provider != "ollama" and provider != "custom":
+        # Clear stale base_url when switching to a provider that doesn't use it
+        current.pop("base_url", None)
+    _write_settings_file(current)
+
+    # Also update os.environ so in-process calls see the new value immediately
+    os.environ["LLM_PROVIDER"] = provider
+    if model:
         os.environ["LLM_MODEL"] = model
-
-    if provider == "ollama":
-        if base_url:
-            set_key(ENV_FILE, "OLLAMA_BASE_URL", base_url)
-            os.environ["OLLAMA_BASE_URL"] = base_url
-
-    elif provider == "gemini":
-        if not api_key:
-            raise HTTPException(status_code=400, detail="Gemini provider requires API key")
-        set_key(ENV_FILE, "LLM_API_KEY", api_key)
+    if api_key:
         os.environ["LLM_API_KEY"] = api_key
-
-    elif provider in _COMPAT_PROVIDERS:
-        if not api_key and provider != "custom":
-            raise HTTPException(status_code=400, detail=f"{provider.capitalize()} provider requires API key")
-        if api_key:
-            set_key(ENV_FILE, "LLM_API_KEY", api_key)
-            os.environ["LLM_API_KEY"] = api_key
-            # Keep legacy env var for openai for backwards-compat
-            if provider == "openai":
-                set_key(ENV_FILE, "OPENAI_API_KEY", api_key)
-                os.environ["OPENAI_API_KEY"] = api_key
-        if base_url:
-            set_key(ENV_FILE, "LLM_BASE_URL", base_url)
-            os.environ["LLM_BASE_URL"] = base_url
 
     return {"ok": True}
 

@@ -133,8 +133,11 @@
           <button class="nav-item active" id="nav-inbox" title="Inbox">📥</button>
         </nav>
         <div class="sidebar-footer">
-          <button id="btn-settings" class="btn btn-icon sidebar-icon-btn" title="AI Provider Settings">⚙️</button>
-          <button id="btn-reset" class="btn btn-icon sidebar-icon-btn" title="Reset Authentication">🔑</button>
+          <div id="ai-status-chip" class="ai-status-chip" title="Active AI Provider">…</div>
+          <div class="sidebar-actions-row">
+            <button id="btn-settings" class="btn btn-icon sidebar-icon-btn" title="AI Provider Settings">⚙️</button>
+            <button id="btn-reset" class="btn btn-icon sidebar-icon-btn" title="Reset Authentication">🔑</button>
+          </div>
         </div>
       </aside>
 
@@ -179,6 +182,10 @@
       <div class="modal-header">
         <h3>⚙️ AI Provider Settings</h3>
         <button id="btn-close-settings" class="btn btn-icon" title="Close">✕</button>
+      </div>
+
+      <div id="settings-current-info" class="settings-current-info hidden">
+        <span id="settings-current-text"></span>
       </div>
 
       <div class="field-stack">

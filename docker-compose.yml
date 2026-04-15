@@ -6,8 +6,6 @@ services:
       - "8503:8000"
     environment:
       - AUTH_DIR=/app/auth
-      - LLM_PROVIDER=ollama
-      - LLM_MODEL=phi4-mini
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     volumes:
       - .:/app

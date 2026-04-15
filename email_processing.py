@@ -30,6 +30,19 @@ DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_MISTRAL_MODEL = "mistral-small-latest"
 DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
 DEFAULT_COHERE_MODEL = "command-r-plus"
+# Writable settings file stored in the auth volume (never root-owned, survives restarts)
+_SETTINGS_FILE = os.path.join(os.environ.get("AUTH_DIR", "/app/auth"), "settings.json")
+
+
+def _read_settings_file() -> dict:
+    """Load saved LLM settings from the auth volume JSON file."""
+    try:
+        with open(_SETTINGS_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 DEFAULT_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 DEFAULT_OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
@@ -183,34 +196,36 @@ def list_provider_models(provider, api_key="", base_url=""):
 
 
 def resolve_llm_config():
-    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    # Saved UI settings take priority over environment variables
+    saved = _read_settings_file()
+
+    provider = (saved.get("provider") or os.getenv("LLM_PROVIDER", "")).strip().lower()
     if not provider:
         provider = "gemini" if os.getenv("LLM_API_KEY", "").strip() else "ollama"
 
     if provider == "gemini":
-        api_key = os.getenv("LLM_API_KEY", "").strip()
-        model = os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        api_key = saved.get("api_key") or os.getenv("LLM_API_KEY", "").strip()
+        model = saved.get("model") or os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
         return {"provider": provider, "api_key": api_key, "model": model, "base_url": ""}
 
     if provider == "ollama":
-        model = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
-        base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
+        model = saved.get("model") or os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
+        base_url = saved.get("base_url") or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
         return {"provider": "ollama", "api_key": "", "model": model, "base_url": base_url}
 
     if provider in _OPENAI_COMPAT_PROVIDERS:
         defaults = _PROVIDER_DEFAULTS.get(provider, {})
-        # API key env var: prefer OPENAI_API_KEY for openai, else LLM_API_KEY
         if provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
+            api_key = saved.get("api_key") or os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
         else:
-            api_key = os.getenv("LLM_API_KEY", "").strip()
-        model = os.getenv("LLM_MODEL", defaults.get("model", "")).strip() or defaults.get("model", "")
-        base_url = os.getenv("LLM_BASE_URL", defaults.get("base_url", "")).strip() or defaults.get("base_url", "")
+            api_key = saved.get("api_key") or os.getenv("LLM_API_KEY", "").strip()
+        model = saved.get("model") or os.getenv("LLM_MODEL", defaults.get("model", "")).strip() or defaults.get("model", "")
+        base_url = saved.get("base_url") or os.getenv("LLM_BASE_URL", defaults.get("base_url", "")).strip() or defaults.get("base_url", "")
         return {"provider": provider, "api_key": api_key, "model": model, "base_url": base_url}
 
     # Fallback to ollama
-    model = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
-    base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
+    model = saved.get("model") or os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
+    base_url = saved.get("base_url") or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
     return {"provider": "ollama", "api_key": "", "model": model, "base_url": base_url}
 
 
