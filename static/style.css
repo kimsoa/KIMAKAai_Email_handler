@@ -370,8 +370,9 @@ a:hover { text-decoration: underline; }
   border-radius: 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  max-width: 72px;
-  width: 72px;
+  width: calc(100% - 8px);
+  max-width: 56px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
