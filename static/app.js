@@ -6,6 +6,7 @@
 let _jobPollInterval = null;
 let _liveEmailPollInterval = null;
 let _selectedEmail = null;
+let _emailToneMap = {};   // gmail_id → 'professional' | 'brief' | 'scheduler'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -465,7 +466,11 @@ function renderDetailPanel(email) {
   const hasProfessional = !!draft.professional;
   const hasBrief        = !!draft.brief;
   const hasScheduler    = !!draft.scheduler;
-  const defaultDraft    = draft.professional || draft.brief || draft.scheduler || '';
+  const savedTone       = _emailToneMap[email.gmail_id] || 'professional';
+  const activeTone      = (savedTone === 'brief' && hasBrief)       ? 'brief'
+                        : (savedTone === 'scheduler' && hasScheduler) ? 'scheduler'
+                        : 'professional';
+  const defaultDraft    = draft[activeTone] || draft.professional || draft.brief || draft.scheduler || '';
 
   const savedLayout = localStorage.getItem('cards-layout') || 'layout-2-1';
   const toggleLabel  = savedLayout === 'layout-3' ? '▉▉▉' : '▉▉';
@@ -503,11 +508,11 @@ function renderDetailPanel(email) {
       <div class="detail-card" id="card-drafts">
         <div class="detail-card-title">✍ Draft Options</div>
         <div class="draft-tabs">
-          <button class="draft-tab active" id="tab-professional"
+          <button class="draft-tab ${activeTone === 'professional' ? 'active' : ''}" id="tab-professional"
             onclick="switchDraft('professional')" ${hasProfessional ? '' : 'disabled'}>Professional</button>
-          <button class="draft-tab" id="tab-brief"
+          <button class="draft-tab ${activeTone === 'brief' ? 'active' : ''}" id="tab-brief"
             onclick="switchDraft('brief')" ${hasBrief ? '' : 'disabled'}>Brief</button>
-          <button class="draft-tab" id="tab-scheduler"
+          <button class="draft-tab ${activeTone === 'scheduler' ? 'active' : ''}" id="tab-scheduler"
             onclick="switchDraft('scheduler')" ${hasScheduler ? '' : 'disabled'}>Scheduler</button>
         </div>
         <textarea class="draft-textarea" id="draft-textarea" spellcheck="true">${escHtml(defaultDraft)}</textarea>
@@ -531,6 +536,9 @@ function switchDraft(key) {
   document.querySelectorAll('.draft-tab').forEach(btn => {
     btn.classList.toggle('active', btn.id === `tab-${key}`);
   });
+  if (_selectedEmail) {
+    _emailToneMap[_selectedEmail.gmail_id] = key;
+  }
 }
 
 function copyDraft() {
