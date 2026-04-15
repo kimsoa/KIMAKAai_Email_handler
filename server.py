@@ -404,7 +404,15 @@ def get_jobs():
 def _run_fetch():
     _jobs["fetch"]["running"] = True
     try:
-        fetch_unread_emails_and_save()
+        try:
+            days = int(os.environ.get("FETCH_UNREAD_DAYS", "2"))
+        except Exception:
+            days = 2
+        try:
+            max_results = int(os.environ.get("FETCH_MAX_RESULTS", "50"))
+        except Exception:
+            max_results = 50
+        fetch_unread_emails_and_save(days=days, max_results=max_results)
         _jobs["fetch"]["last"] = "success"
     except Exception as e:
         _jobs["fetch"]["last"] = f"error: {e}"

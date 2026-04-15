@@ -4,7 +4,8 @@ import email
 import urllib.request
 import urllib.error
 from email.policy import default
-from datetime import date
+from email.utils import parsedate_to_datetime
+from datetime import date, datetime, timedelta, timezone
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 import prompts
@@ -65,6 +66,33 @@ _PROVIDER_DEFAULTS = {
 }
 RAW_EMAILS_DIR = "raw_emails"
 PROCESSED_EMAILS_FILE = "processed_emails.jsonl"
+
+
+def _is_recent_email(date_header: str, file_path: str, days: int) -> bool:
+    """Return True if the email appears to be within the last N days.
+
+    Uses the Date header when parseable, otherwise falls back to file mtime.
+    """
+    if days <= 0:
+        return True
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    dt = None
+    if date_header:
+        try:
+            dt = parsedate_to_datetime(date_header)
+            if dt and dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            dt = None
+    if dt is not None:
+        return dt >= cutoff
+
+    try:
+        mtime = os.path.getmtime(file_path)
+        return datetime.fromtimestamp(mtime, tz=timezone.utc) >= cutoff
+    except Exception:
+        return False
 
 
 def _read_json_response(url, headers=None, method="GET", payload=None):
@@ -418,12 +446,27 @@ def run_agentic_pipeline():
                 except Exception:
                     pass
 
+    try:
+        recent_days = int(os.environ.get("PROCESS_UNREAD_DAYS", "2"))
+    except Exception:
+        recent_days = 2
+
     files = [fn for fn in os.listdir(RAW_EMAILS_DIR) if fn.endswith(".txt")]
     new_files = [fn for fn in files if fn.replace(".txt", "") not in processed_ids]
     print(f"Found {len(files)} raw emails. Processing {len(new_files)} new ones…")
 
     for fname in new_files:
-        email_data = parse_raw_email(os.path.join(RAW_EMAILS_DIR, fname))
+        path = os.path.join(RAW_EMAILS_DIR, fname)
+        email_data = parse_raw_email(path)
+
+        # Skip draft-like messages if they somehow ended up in raw_emails
+        subj = (email_data.get("subject") or "").strip().lower()
+        if subj.startswith("draft") or subj.startswith("draft:"):
+            continue
+
+        # Only process recent unread mail (yesterday + today by default)
+        if not _is_recent_email(email_data.get("date", ""), path, recent_days):
+            continue
         print(f"\n→ {email_data['subject']}")
 
         result = processor.process(email_data)

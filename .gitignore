@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Local environment / secrets
+.env
+*.local
+
+# Gmail auth artifacts (stored under AUTH_DIR in container)
+auth/
+token.pickle
+pkce_pending.json
+
+# App runtime data
+raw_emails/
+processed_emails.jsonl
+processed_emails.jsonl.*

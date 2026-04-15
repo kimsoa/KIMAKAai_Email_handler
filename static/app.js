@@ -350,6 +350,10 @@ async function loadEmails() {
       `Processed Emails (${emails.length})`;
   } catch (e) {
     console.error('Failed to load emails:', e);
+    const el = document.getElementById('job-status');
+    if (el) {
+      el.innerHTML = `<span class="job-error">❌ Refresh failed: ${escHtml(e.message || String(e))}</span>`;
+    }
   }
 }
 
@@ -362,8 +366,27 @@ function priorityBadge(priority) {
 }
 
 function renderEmailList(emails) {
+  // Always show higher priority first. Low priority should be last.
+  // Keep original ordering within the same priority bucket.
+  function priorityRank(p) {
+    const v = String(p || '').trim().toLowerCase();
+    if (v === 'high') return 3;
+    if (v === 'medium') return 2;
+    if (v === 'low') return 1;
+    return 0;
+  }
+
+  const emailsSorted = (emails || [])
+    .map((e, idx) => {
+      const es = (e && e.executive_summary) || {};
+      const pr = es.priority || e.priority || null;
+      return { e, idx, rank: priorityRank(pr) };
+    })
+    .sort((a, b) => (b.rank - a.rank) || (a.idx - b.idx))
+    .map(x => x.e);
+
   const container = document.getElementById('email-list');
-  if (!emails.length) {
+  if (!emailsSorted.length) {
     container.innerHTML = `
       <div class="empty-state">
         <p>No processed emails yet.<br>Use the sidebar to fetch and process.</p>
@@ -377,7 +400,7 @@ function renderEmailList(emails) {
     return;
   }
 
-  container.innerHTML = emails.map((e, i) => {
+  container.innerHTML = emailsSorted.map((e, i) => {
     const es = e.executive_summary || {};
     const priority = es.priority || e.priority || null;
     const oneLiner = es.one_liner || e.subject || '(no subject)';
@@ -395,14 +418,14 @@ function renderEmailList(emails) {
 
   // Keep selection in sync after list refresh
   if (_selectedEmail) {
-    const idx = emails.findIndex(e => e.gmail_id === _selectedEmail.gmail_id);
+    const idx = emailsSorted.findIndex(e => e.gmail_id === _selectedEmail.gmail_id);
     if (idx >= 0) {
       container.querySelectorAll('.email-row')[idx].classList.add('selected');
-      renderDetailPanel(emails[idx]);
+      renderDetailPanel(emailsSorted[idx]);
     }
   }
 
-  window._emailsCache = emails;
+  window._emailsCache = emailsSorted;
 }
 
 function selectEmail(idx) {
@@ -588,7 +611,15 @@ document.getElementById('btn-process').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('btn-refresh-list').addEventListener('click', loadEmails);
+document.getElementById('btn-refresh-list').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-refresh-list');
+  btn.disabled = true;
+  try {
+    await loadEmails();
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById('btn-demo').addEventListener('click', async () => {
   try {
@@ -648,11 +679,13 @@ async function updateAiStatusChip() {
     const s = await api('GET', '/api/status');
     const provider = s.llm_provider || '—';
     const model = s.llm_model || '—';
-    chip.textContent = `${provider}\n${model}`;
+    // Show last segment of model name (e.g. "microsoft/phi-4" → "phi-4")
+    const modelShort = model.includes('/') ? model.split('/').pop() : model;
+    chip.innerHTML = `<span class="chip-provider">${escHtml(provider)}</span><span class="chip-model">${escHtml(modelShort)}</span>`;
     chip.title = `Active AI: ${provider} / ${model}`;
     chip.classList.toggle('chip-ok', !!s.llm_configured);
   } catch {
-    chip.textContent = 'AI\n?';
+    chip.innerHTML = '<span class="chip-provider">AI</span><span class="chip-model">?</span>';
   }
 }
 
@@ -683,6 +716,9 @@ function openSettings() {
 function closeSettings() {
   document.getElementById('settings-modal').classList.add('hidden');
   hideFeedback('settings-feedback');
+  const btn = document.getElementById('btn-save-settings');
+  btn.disabled = false;
+  btn.textContent = 'Save';
 }
 
 async function initSettingsModal() {

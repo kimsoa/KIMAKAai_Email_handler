@@ -130,23 +130,56 @@ def get_gmail_service(client_secret_path='client_secret.json', token_path='token
 
     return build('gmail', 'v1', credentials=creds), None, None
 
-def fetch_unread_emails_and_save():
-    """Fetches unread emails from Gmail and saves their raw content."""
+def fetch_unread_emails_and_save(days=2, max_results=None):
+    """Fetch unread inbox emails from the last N days and save raw content.
+
+    This intentionally avoids drafts/sent mail to prevent the app from
+    processing messages that look like "we wrote the email".
+    """
     auth_dir = os.environ.get("AUTH_DIR", ".")
     secret = os.path.join(auth_dir, "client_secret.json")
     token = os.path.join(auth_dir, "token.pickle")
     service, _, _ = get_gmail_service(secret, token)
     emails_fetched_count = 0
     try:
-        # Request only unread messages
-        results = service.users().messages().list(userId='me', labelIds=['UNREAD']).execute()
-        messages = results.get('messages', [])
+        try:
+            days = int(days)
+        except Exception:
+            days = 2
+        days = max(1, days)
+
+        if max_results is None:
+            try:
+                max_results = int(os.environ.get("FETCH_MAX_RESULTS", "50"))
+            except Exception:
+                max_results = 50
+        max_results = max(1, int(max_results))
+
+        # Gmail query language: restrict to unread in inbox, exclude drafts/sent,
+        # and only pull recent mail to limit system load and token burn.
+        query = f"is:unread newer_than:{days}d in:inbox -in:drafts -in:sent"
+
+        messages = []
+        page_token = None
+        while len(messages) < max_results:
+            batch_size = min(500, max_results - len(messages))
+            req = service.users().messages().list(
+                userId="me",
+                q=query,
+                maxResults=batch_size,
+                pageToken=page_token,
+            )
+            results = req.execute()
+            messages.extend(results.get("messages", []) or [])
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
 
         if not messages:
-            print("No unread messages found.")
+            print("No matching unread messages found.")
             return
 
-        print(f"Found {len(messages)} unread messages.")
+        print(f"Found {len(messages)} unread messages (last {days} day(s)).")
 
         # Create a directory to store raw emails if it doesn't exist
         os.makedirs('raw_emails', exist_ok=True)
