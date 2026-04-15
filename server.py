@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from dotenv import set_key, load_dotenv
 
 from email_fetcher import get_gmail_service, fetch_unread_emails_and_save
-from email_processing import run_agentic_pipeline
+from email_processing import run_agentic_pipeline, resolve_llm_config, list_provider_models
 
 AUTH_DIR = os.environ.get("AUTH_DIR", "/app/auth")
 CLIENT_SECRET_PATH = os.path.join(AUTH_DIR, "client_secret.json")
@@ -33,10 +33,19 @@ _jobs: dict = {
 @app.get("/api/status")
 def get_status():
     load_dotenv(ENV_FILE, override=True)
+    llm = resolve_llm_config()
+    provider = llm.get("provider", "ollama")
+    has_ai_config = bool(llm.get("model"))
+    if provider in ("gemini", "openai"):
+        has_ai_config = has_ai_config and bool(llm.get("api_key"))
     return {
         "has_client_secret": os.path.exists(CLIENT_SECRET_PATH),
         "authenticated": os.path.exists(TOKEN_PATH),
         "has_api_key": bool(os.getenv("LLM_API_KEY", "").strip()),
+        "llm_provider": provider,
+        "llm_model": llm.get("model", ""),
+        "llm_base_url": llm.get("base_url", ""),
+        "llm_configured": has_ai_config,
     }
 
 
@@ -66,6 +75,108 @@ def save_api_key(body: ApiKeyBody):
         raise HTTPException(status_code=400, detail="API key cannot be empty")
     set_key(ENV_FILE, "LLM_API_KEY", key)
     os.environ["LLM_API_KEY"] = key
+    if not os.getenv("LLM_PROVIDER", "").strip():
+        set_key(ENV_FILE, "LLM_PROVIDER", "gemini")
+        os.environ["LLM_PROVIDER"] = "gemini"
+    return {"ok": True}
+
+
+class LlmSettingsBody(BaseModel):
+    provider: str
+    model: str = ""
+    api_key: str = ""
+    base_url: str = ""
+
+
+@app.get("/api/llm/providers")
+def get_llm_providers():
+    cfg = resolve_llm_config()
+
+    providers = [
+        {
+            "id": "ollama",
+            "label": "Local Ollama",
+            "api_key_required": False,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "ollama" else os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
+        },
+        {
+            "id": "gemini",
+            "label": "Google Gemini",
+            "api_key_required": True,
+            "base_url": "",
+        },
+        {
+            "id": "openai",
+            "label": "OpenAI-Compatible",
+            "api_key_required": True,
+            "base_url": cfg.get("base_url") if cfg.get("provider") == "openai" else os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        },
+    ]
+
+    current_provider = cfg.get("provider", "ollama")
+
+    model_map = {}
+    for provider in ("ollama", "gemini", "openai"):
+        if provider == "gemini":
+            key_for_provider = os.getenv("LLM_API_KEY", "").strip()
+            base_for_provider = ""
+        elif provider == "openai":
+            key_for_provider = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
+            base_for_provider = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+        else:
+            key_for_provider = ""
+            base_for_provider = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").strip()
+
+        if provider == current_provider:
+            key_for_provider = cfg.get("api_key", key_for_provider)
+            base_for_provider = cfg.get("base_url", base_for_provider)
+
+        model_map[provider] = list_provider_models(provider, api_key=key_for_provider, base_url=base_for_provider)
+
+    return {
+        "providers": providers,
+        "current": cfg,
+        "models": model_map,
+    }
+
+
+@app.post("/api/settings/llm")
+def save_llm_settings(body: LlmSettingsBody):
+    provider = (body.provider or "").strip().lower()
+    if provider not in ("ollama", "gemini", "openai"):
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+
+    model = (body.model or "").strip()
+    api_key = (body.api_key or "").strip()
+    base_url = (body.base_url or "").strip()
+
+    set_key(ENV_FILE, "LLM_PROVIDER", provider)
+    os.environ["LLM_PROVIDER"] = provider
+
+    if model:
+        set_key(ENV_FILE, "LLM_MODEL", model)
+        os.environ["LLM_MODEL"] = model
+
+    if provider == "ollama":
+        if base_url:
+            set_key(ENV_FILE, "OLLAMA_BASE_URL", base_url)
+            os.environ["OLLAMA_BASE_URL"] = base_url
+
+    elif provider == "gemini":
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Gemini provider requires API key")
+        set_key(ENV_FILE, "LLM_API_KEY", api_key)
+        os.environ["LLM_API_KEY"] = api_key
+
+    elif provider == "openai":
+        if not api_key:
+            raise HTTPException(status_code=400, detail="OpenAI provider requires API key")
+        set_key(ENV_FILE, "OPENAI_API_KEY", api_key)
+        os.environ["OPENAI_API_KEY"] = api_key
+        if base_url:
+            set_key(ENV_FILE, "OPENAI_BASE_URL", base_url)
+            os.environ["OPENAI_BASE_URL"] = base_url
+
     return {"ok": True}
 
 

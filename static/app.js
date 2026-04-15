@@ -96,10 +96,11 @@ function route(status) {
     setStepIndicator(2);
     return;
   }
-  if (!status.has_api_key) {
+  if (!status.llm_configured) {
     show('view-setup');
     showCard('setup-step-3');
     setStepIndicator(3);
+    initLlmStep();
     return;
   }
   showInbox();
@@ -177,6 +178,7 @@ document.getElementById('btn-get-auth-url').addEventListener('click', async () =
     if (data.authenticated) {
       showCard('setup-step-3');
       setStepIndicator(3);
+      initLlmStep();
       return;
     }
     document.getElementById('auth-url-link').href = data.auth_url;
@@ -207,6 +209,7 @@ async function submitCallback() {
     setTimeout(() => {
       showCard('setup-step-3');
       setStepIndicator(3);
+      initLlmStep();
     }, 800);
   } catch (e) {
     showFeedback('callback-feedback', `Error: ${e.message}`, 'error');
@@ -215,23 +218,106 @@ async function submitCallback() {
   }
 }
 
-// ── Step 3: API Key ───────────────────────────────────────────────────────────
+// ── Step 3: AI Provider Setup ────────────────────────────────────────────────
 
-document.getElementById('btn-save-api-key').addEventListener('click', saveApiKey);
+let _llmProviders = [];
+let _llmModelsMap = {};
+let _llmCurrent = {};
+
+document.getElementById('btn-save-api-key').addEventListener('click', saveLlmSettings);
+document.getElementById('btn-refresh-models').addEventListener('click', initLlmStep);
+document.getElementById('provider-select').addEventListener('change', onProviderChange);
 document.getElementById('api-key-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveApiKey();
+  if (e.key === 'Enter') saveLlmSettings();
 });
 
-async function saveApiKey() {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (!key) return;
+async function initLlmStep() {
+  hideFeedback('api-key-feedback');
+  try {
+    const data = await api('GET', '/api/llm/providers');
+    _llmProviders = data.providers || [];
+    _llmModelsMap = data.models || {};
+    _llmCurrent = data.current || {};
+
+    const providerSelect = document.getElementById('provider-select');
+    providerSelect.innerHTML = _llmProviders
+      .map(p => `<option value="${escHtml(p.id)}">${escHtml(p.label)}</option>`)
+      .join('');
+
+    const selectedProvider = _llmCurrent.provider || (_llmProviders[0] && _llmProviders[0].id) || 'ollama';
+    providerSelect.value = selectedProvider;
+
+    onProviderChange();
+
+    if (_llmCurrent.model) {
+      const modelSelect = document.getElementById('model-select');
+      const hasMatch = Array.from(modelSelect.options).some(o => o.value === _llmCurrent.model);
+      if (hasMatch) {
+        modelSelect.value = _llmCurrent.model;
+      } else {
+        document.getElementById('model-manual-input').value = _llmCurrent.model;
+      }
+    }
+  } catch (e) {
+    showFeedback('api-key-feedback', `Error loading providers: ${e.message}`, 'error');
+  }
+}
+
+function onProviderChange() {
+  const provider = document.getElementById('provider-select').value;
+  const providerMeta = _llmProviders.find(p => p.id === provider) || {};
+
+  const modelSelect = document.getElementById('model-select');
+  const models = _llmModelsMap[provider] || [];
+  modelSelect.innerHTML = models.length
+    ? models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')
+    : '<option value="">No models discovered — type manually below</option>';
+
+  const apiGroup = document.getElementById('api-key-group');
+  const apiInput = document.getElementById('api-key-input');
+  const baseUrlInput = document.getElementById('base-url-input');
+
+  apiGroup.classList.toggle('hidden', !providerMeta.api_key_required);
+  apiInput.placeholder = provider === 'gemini' ? 'AIza…' : 'Enter provider API key';
+  baseUrlInput.value = providerMeta.base_url || '';
+
+  if (!models.length) {
+    document.getElementById('model-manual-input').placeholder =
+      provider === 'ollama' ? 'e.g. phi4-mini, llama3.2:1b' : 'Type model name manually';
+  }
+}
+
+async function saveLlmSettings() {
+  const provider = document.getElementById('provider-select').value;
+  const selectedModel = document.getElementById('model-select').value.trim();
+  const manualModel = document.getElementById('model-manual-input').value.trim();
+  const model = manualModel || selectedModel;
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  const baseUrl = document.getElementById('base-url-input').value.trim();
+
+  const providerMeta = _llmProviders.find(p => p.id === provider) || {};
+  if (providerMeta.api_key_required && !apiKey) {
+    showFeedback('api-key-feedback', 'API key is required for this provider.', 'error');
+    return;
+  }
+  if (!model) {
+    showFeedback('api-key-feedback', 'Please select or type a model.', 'error');
+    return;
+  }
+
   const btn = document.getElementById('btn-save-api-key');
   btn.disabled = true;
   btn.textContent = 'Saving…';
   hideFeedback('api-key-feedback');
+
   try {
-    await api('POST', '/api/settings/api-key', { api_key: key });
-    showFeedback('api-key-feedback', '✅ API key saved!', 'success');
+    await api('POST', '/api/settings/llm', {
+      provider,
+      model,
+      api_key: apiKey,
+      base_url: baseUrl,
+    });
+    showFeedback('api-key-feedback', '✅ AI provider settings saved!', 'success');
     setTimeout(() => {
       showCard('setup-done');
       [1, 2, 3].forEach(i =>

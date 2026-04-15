@@ -30,7 +30,7 @@
         <div class="step-divider"></div>
         <div class="step" id="step-indicator-2"><span>2</span> Authorize Gmail</div>
         <div class="step-divider"></div>
-        <div class="step" id="step-indicator-3"><span>3</span> AI API Key</div>
+        <div class="step" id="step-indicator-3"><span>3</span> AI Provider</div>
       </div>
 
       <!-- Step 1: Upload client_secret.json -->
@@ -76,16 +76,37 @@
         </div>
       </div>
 
-      <!-- Step 3: API Key -->
+      <!-- Step 3: AI Provider -->
       <div id="setup-step-3" class="setup-card hidden">
-        <h2>Step 3 — Gemini AI API Key</h2>
-        <p>
-          Enter your
-          <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio API key</a>
-          to enable intelligent email processing.
-        </p>
+        <h2>Step 3 — AI Provider Configuration</h2>
+        <p>Select any supported provider. Model list is fetched automatically when possible.</p>
+
+        <div class="field-stack">
+          <label for="provider-select">Provider</label>
+          <select id="provider-select"></select>
+        </div>
+
+        <div class="field-stack">
+          <label for="model-select">Model</label>
+          <div class="input-group">
+            <select id="model-select"></select>
+            <button id="btn-refresh-models" class="btn btn-secondary" type="button">Refresh Models</button>
+          </div>
+          <input type="text" id="model-manual-input" placeholder="Or type model name manually (optional)" />
+        </div>
+
+        <div class="field-stack">
+          <label for="base-url-input">Base URL (optional)</label>
+          <input type="text" id="base-url-input" placeholder="http://host.docker.internal:11434" />
+          <p class="hint">Use for local Ollama or OpenAI-compatible endpoints.</p>
+        </div>
+
+        <div class="field-stack" id="api-key-group">
+          <label for="api-key-input">API Key</label>
+          <input type="password" id="api-key-input" placeholder="Enter provider API key" />
+        </div>
+
         <div class="input-group">
-          <input type="password" id="api-key-input" placeholder="AIza…" />
           <button id="btn-save-api-key" class="btn btn-primary">Save &amp; Finish</button>
         </div>
         <div id="api-key-feedback" class="feedback hidden"></div>

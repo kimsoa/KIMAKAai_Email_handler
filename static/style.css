@@ -163,6 +163,37 @@ a:hover { text-decoration: underline; }
 }
 .input-group input:focus { border-color: var(--accent); }
 
+.input-group select,
+.field-stack select,
+.field-stack input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+}
+.input-group select:focus,
+.field-stack select:focus,
+.field-stack input:focus {
+  border-color: var(--accent);
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.field-stack label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 /* Auth link */
 .auth-link {
   display: inline-block;

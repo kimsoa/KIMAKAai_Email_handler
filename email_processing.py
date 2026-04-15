@@ -1,6 +1,8 @@
 import os
 import json
 import email
+import urllib.request
+import urllib.error
 from email.policy import default
 from datetime import date
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -21,51 +23,222 @@ if not hasattr(genai.GenerationConfig, "MediaResolution"):
     genai.GenerationConfig.MediaResolution = MediaResolution
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_OLLAMA_MODEL = "phi4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+DEFAULT_OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 RAW_EMAILS_DIR = "raw_emails"
 PROCESSED_EMAILS_FILE = "processed_emails.jsonl"
 
 
+def _read_json_response(url, headers=None, method="GET", payload=None):
+    req = urllib.request.Request(url, method=method)
+    if headers:
+        for k, v in headers.items():
+            req.add_header(k, v)
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        req.add_header("Content-Type", "application/json")
+    else:
+        data = None
+
+    with urllib.request.urlopen(req, data=data, timeout=20) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
+
+
+def _normalize_json_response(response_str):
+    clean = response_str.strip()
+    if clean.startswith("```json"):
+        clean = clean[7:]
+    if clean.startswith("```"):
+        clean = clean[3:]
+    if clean.endswith("```"):
+        clean = clean[:-3]
+    return json.loads(clean.strip())
+
+
+def _ollama_base_candidates(base_url=""):
+    seed = (base_url or "").strip()
+    candidates = [
+        seed,
+        os.getenv("OLLAMA_BASE_URL", "").strip(),
+        DEFAULT_OLLAMA_BASE_URL,
+        "http://172.17.0.1:11434",
+        "http://localhost:11434",
+    ]
+    seen = set()
+    ordered = []
+    for raw in candidates:
+        if not raw:
+            continue
+        normalized = raw.rstrip("/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
+def _ollama_request_json(base_url, path, method="GET", payload=None):
+    last_err = None
+    for candidate in _ollama_base_candidates(base_url):
+        try:
+            return _read_json_response(f"{candidate}{path}", method=method, payload=payload)
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"Unable to reach Ollama on any known endpoint: {last_err}")
+
+
+def list_provider_models(provider, api_key="", base_url=""):
+    provider = (provider or "").strip().lower()
+
+    try:
+        if provider == "ollama":
+            data = _ollama_request_json(base_url, "/api/tags")
+            models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+            return sorted(models)
+
+        if provider == "openai":
+            if not api_key:
+                return []
+            openai_url = (base_url or DEFAULT_OPENAI_BASE_URL).rstrip("/")
+            data = _read_json_response(
+                f"{openai_url}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+            return sorted(models)
+
+        if provider == "gemini":
+            if not api_key:
+                return []
+            genai.configure(api_key=api_key)
+            models = []
+            for model in genai.list_models():
+                name = getattr(model, "name", "")
+                if name.startswith("models/") and "generateContent" in getattr(model, "supported_generation_methods", []):
+                    models.append(name.replace("models/", ""))
+            return sorted(models)
+    except Exception:
+        return []
+
+    return []
+
+
+def resolve_llm_config():
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if not provider:
+        provider = "gemini" if os.getenv("LLM_API_KEY", "").strip() else "ollama"
+
+    if provider == "gemini":
+        api_key = os.getenv("LLM_API_KEY", "").strip()
+        model = os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        return {
+            "provider": provider,
+            "api_key": api_key,
+            "model": model,
+            "base_url": "",
+        }
+
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("LLM_API_KEY", "").strip()
+        model = os.getenv("LLM_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+        base_url = os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL).strip() or DEFAULT_OPENAI_BASE_URL
+        return {
+            "provider": provider,
+            "api_key": api_key,
+            "model": model,
+            "base_url": base_url,
+        }
+
+    # Default to ollama for local/offline processing.
+    model = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
+    base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
+    return {
+        "provider": "ollama",
+        "api_key": "",
+        "model": model,
+        "base_url": base_url,
+    }
+
+
 class LLMClient:
     def __init__(self):
-        api_key = os.getenv("LLM_API_KEY", "")
-        if not api_key:
-            raise ValueError("LLM_API_KEY environment variable not set.")
-        print(f"Using Google GenAI Model: {DEFAULT_GEMINI_MODEL}")
-        self.llm = ChatGoogleGenerativeAI(
-            model=DEFAULT_GEMINI_MODEL,
-            google_api_key=api_key,
-            temperature=0,
-            max_retries=1,  # Fail fast — don't spin forever on quota errors
-        )
+        cfg = resolve_llm_config()
+        self.provider = cfg["provider"]
+        self.model = cfg["model"]
+        self.base_url = cfg["base_url"]
+        self.api_key = cfg["api_key"]
+
+        print(f"Using LLM provider={self.provider} model={self.model}")
+
+        if self.provider == "gemini":
+            if not self.api_key:
+                raise ValueError("LLM_API_KEY environment variable not set for Gemini provider.")
+            self.llm = ChatGoogleGenerativeAI(
+                model=self.model,
+                google_api_key=self.api_key,
+                temperature=0,
+                max_retries=1,  # Fail fast — don't spin forever on quota errors
+            )
+        else:
+            self.llm = None
 
     def invoke_json(self, system_prompt, user_prompt_text):
         """Invoke LLM and return parsed JSON, or None on failure."""
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "{system_content}"),
-            ("user", "{user_content}"),
-        ])
-        chain = prompt | self.llm
         try:
-            response_str = chain.invoke({
-                "system_content": system_prompt,
-                "user_content": user_prompt_text,
-            }).content
-            clean = response_str.strip()
-            if clean.startswith("```json"):
-                clean = clean[7:]
-            if clean.startswith("```"):
-                clean = clean[3:]
-            if clean.endswith("```"):
-                clean = clean[:-3]
-            return json.loads(clean.strip())
+            if self.provider == "gemini":
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", "{system_content}"),
+                    ("user", "{user_content}"),
+                ])
+                chain = prompt | self.llm
+                response_str = chain.invoke({
+                    "system_content": system_prompt,
+                    "user_content": user_prompt_text,
+                }).content
+                return _normalize_json_response(response_str)
+
+            if self.provider == "ollama":
+                payload = {
+                    "model": self.model,
+                    "stream": False,
+                    "format": "json",
+                    "prompt": f"System:\n{system_prompt}\n\nUser:\n{user_prompt_text}",
+                    "options": {"temperature": 0},
+                }
+                data = _ollama_request_json(self.base_url, "/api/generate", method="POST", payload=payload)
+                return _normalize_json_response(data.get("response", "{}"))
+
+            if self.provider == "openai":
+                payload = {
+                    "model": self.model,
+                    "temperature": 0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt_text},
+                    ],
+                }
+                data = _read_json_response(
+                    f"{self.base_url.rstrip('/')}/chat/completions",
+                    method="POST",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    payload=payload,
+                )
+                response_str = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                return _normalize_json_response(response_str)
+
+            raise RuntimeError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
             err_str = str(e)
             # Surface quota errors immediately — don't swallow them
             if any(k in err_str for k in ("quota", "ResourceExhausted", "429", "rate limit")):
                 raise RuntimeError(
-                    f"Gemini API daily quota exceeded "
-                    f"(free tier: 20 req/day for {DEFAULT_GEMINI_MODEL}). "
-                    f"Processing will resume automatically tomorrow when the quota resets."
+                    "Provider quota/rate limit exceeded. "
+                    "Switch provider/model in Setup or retry after provider quota resets."
                 ) from e
             print(f"LLM Invocation Error: {e}")
             return None
@@ -150,7 +323,7 @@ def parse_raw_email(file_path):
 
 
 def run_agentic_pipeline():
-    print("Connecting to LLM (Gemini)…")
+    print("Connecting to configured LLM provider…")
     llm_client = LLMClient()
     processor = SinglePassProcessor(llm_client)
 
