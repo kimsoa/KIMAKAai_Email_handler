@@ -1,0 +1,254 @@
+name: Manual Release And Deploy
+# managed-by: kimsoa-ghcr-standard v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Publish only, publish and deploy, or deploy an existing tag.
+        required: true
+        type: choice
+        default: publish-only
+        options:
+          - publish-only
+          - publish-and-deploy
+          - deploy-existing
+      image_tag:
+        description: Optional tag override. Required for deploy-existing.
+        required: false
+        type: string
+        default: ""
+      service_name:
+        description: Optional AgenticOps service name override.
+        required: false
+        type: string
+        default: ""
+      publish_latest:
+        description: Also tag the published image as latest.
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{{{ github.repository }}}}
+
+jobs:
+  publish:
+    if: ${{{{ inputs.action != 'deploy-existing' }}}}
+    runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{{{ steps.meta.outputs.image_ref }}}}
+      image_tag: ${{{{ steps.meta.outputs.image_tag }}}}
+      service_name: ${{{{ steps.meta.outputs.service_name }}}}
+      dockerfile_found: ${{{{ steps.meta.outputs.dockerfile_found }}}}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Metadata
+        id: meta
+        env:
+          INPUT_IMAGE_TAG: ${{{{ inputs.image_tag }}}}
+          INPUT_SERVICE_NAME: ${{{{ inputs.service_name }}}}
+          INPUT_PUBLISH_LATEST: ${{{{ inputs.publish_latest }}}}
+        run: |
+          set -euo pipefail
+
+          DOCKERFILE="$(find . -maxdepth 2 -type f \( -name 'Dockerfile' -o -name '*.Dockerfile' \) | head -n1 || true)"
+          if [ -z "$DOCKERFILE" ]; then
+            echo "dockerfile_found=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile found in repository root or one level below. Skipping image publish."
+            exit 0
+          fi
+
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          DATE_TAG="$(date +%Y%m%d)-${{SHORT_SHA}}"
+          IMAGE_TAG="${{INPUT_IMAGE_TAG:-$SHORT_SHA}}"
+          SERVICE_NAME="${{INPUT_SERVICE_NAME:-${{GITHUB_REPOSITORY##*/}}}}"
+
+          echo "dockerfile_found=true" >> "$GITHUB_OUTPUT"
+          echo "dockerfile_path=${{DOCKERFILE#./}}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{IMAGE_TAG}}" >> "$GITHUB_OUTPUT"
+          echo "service_name=${{SERVICE_NAME}}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=ghcr.io/${{GITHUB_REPOSITORY}}:${{IMAGE_TAG}}" >> "$GITHUB_OUTPUT"
+          {{
+            echo "tags<<EOF"
+            if [ "${{INPUT_PUBLISH_LATEST}}" = "true" ]; then
+              echo "ghcr.io/${{GITHUB_REPOSITORY}}:latest"
+            fi
+            echo "ghcr.io/${{GITHUB_REPOSITORY}}:${{IMAGE_TAG}}"
+            echo "ghcr.io/${{GITHUB_REPOSITORY}}:release-${{DATE_TAG}}"
+            echo "EOF"
+          }} >> "$GITHUB_OUTPUT"
+
+      - name: Set Up Docker Buildx
+        if: steps.meta.outputs.dockerfile_found == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log In To GHCR
+        if: steps.meta.outputs.dockerfile_found == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{{{ env.REGISTRY }}}}
+          username: ${{{{ secrets.GHCR_USERNAME }}}}
+          password: ${{{{ secrets.GHCR_TOKEN }}}}
+
+      - name: Build And Push Image
+        if: steps.meta.outputs.dockerfile_found == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{{{ steps.meta.outputs.dockerfile_path }}}}
+          push: true
+          tags: ${{{{ steps.meta.outputs.tags }}}}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    if: ${{{{ inputs.action == 'publish-and-deploy' || inputs.action == 'deploy-existing' }}}}
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve Deployment Target
+        id: deploy_meta
+        env:
+          INPUT_ACTION: ${{{{ inputs.action }}}}
+          INPUT_IMAGE_TAG: ${{{{ inputs.image_tag }}}}
+          INPUT_SERVICE_NAME: ${{{{ inputs.service_name }}}}
+          PUBLISHED_IMAGE_REF: ${{{{ needs.publish.outputs.image_ref }}}}
+          REPOSITORY_NAME: ${{{{ github.event.repository.name }}}}
+        run: |
+          set -euo pipefail
+
+          SERVICE_NAME="${{INPUT_SERVICE_NAME:-$REPOSITORY_NAME}}"
+          if [ "$INPUT_ACTION" = "deploy-existing" ]; then
+            if [ -z "$INPUT_IMAGE_TAG" ]; then
+              echo "image_tag is required when action=deploy-existing"
+              exit 1
+            fi
+            IMAGE_REF="ghcr.io/${{GITHUB_REPOSITORY}}:${{INPUT_IMAGE_TAG}}"
+          else
+            IMAGE_REF="$PUBLISHED_IMAGE_REF"
+          fi
+
+          echo "service_name=${{SERVICE_NAME}}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${{IMAGE_REF}}" >> "$GITHUB_OUTPUT"
+
+      - name: Check AgenticOps Secrets
+        env:
+          AGENTICOPS_API_URL: ${{{{ secrets.AGENTICOPS_API_URL }}}}
+          AGENTICOPS_API_KEY: ${{{{ secrets.AGENTICOPS_API_KEY }}}}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{AGENTICOPS_API_URL}}" ] || [ -z "${{AGENTICOPS_API_KEY}}" ]; then
+            echo "AgenticOps deployment secrets are missing. Configure AGENTICOPS_API_URL and AGENTICOPS_API_KEY for this repo."
+            exit 1
+          fi
+
+      - name: Ensure AgenticOps Playbook Exists
+        env:
+          AGENTICOPS_API_URL: ${{{{ secrets.AGENTICOPS_API_URL }}}}
+          AGENTICOPS_API_KEY: ${{{{ secrets.AGENTICOPS_API_KEY }}}}
+          AGENTICOPS_SWARM_TARGET: ${{{{ secrets.AGENTICOPS_SWARM_TARGET }}}}
+          REPOSITORY_URL: ${{{{ github.server_url }}}}/${{{{ github.repository }}}}
+        run: |
+          set -euo pipefail
+
+          PLAYBOOK_FILE="playbooks/${{{{ steps.deploy_meta.outputs.service_name }}}}.yaml"
+          if [ ! -f "$PLAYBOOK_FILE" ]; then
+            echo "No repository playbook template found at $PLAYBOOK_FILE. Skipping playbook bootstrap."
+            exit 0
+          fi
+
+          python3 <<'PY' > ensure-playbook.json
+          import json
+          import os
+          from pathlib import Path
+
+          service_name = os.environ['SERVICE_NAME']
+          playbook_file = Path('playbooks') / f'{service_name}.yaml'
+          payload = {{
+              'service': service_name,
+              'repository_url': os.environ.get('REPOSITORY_URL'),
+              'bootstrap_source': 'kimsoa-ghcr-standard',
+              'default_target': os.environ.get('AGENTICOPS_SWARM_TARGET') or 'default',
+              'playbook_yaml': playbook_file.read_text(encoding='utf-8'),
+          }}
+          print(json.dumps(payload))
+          PY
+
+          ENSURE_API="${{AGENTICOPS_API_URL%/}}/api/v1/playbooks/ensure"
+          curl -sS -X POST "$ENSURE_API" \
+            -H "Authorization: Bearer $AGENTICOPS_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data @ensure-playbook.json > /dev/null
+        env:
+          SERVICE_NAME: ${{{{ steps.deploy_meta.outputs.service_name }}}}
+
+      - name: Trigger AgenticOps Deploy
+        env:
+          AGENTICOPS_API_URL: ${{{{ secrets.AGENTICOPS_API_URL }}}}
+          AGENTICOPS_API_KEY: ${{{{ secrets.AGENTICOPS_API_KEY }}}}
+          AGENTICOPS_SWARM_TARGET: ${{{{ secrets.AGENTICOPS_SWARM_TARGET }}}}
+          SERVICE_NAME: ${{{{ steps.deploy_meta.outputs.service_name }}}}
+          IMAGE_REF: ${{{{ steps.deploy_meta.outputs.image_ref }}}}
+        run: |
+          set -euo pipefail
+
+          SWARM_TARGET="${{AGENTICOPS_SWARM_TARGET:-default}}"
+          DEPLOY_API="${{AGENTICOPS_API_URL%/}}/api/v1/deploy/bluegreen"
+
+          RESPONSE_FILE="$(mktemp)"
+          HTTP_STATUS="$(curl -sS -o "$RESPONSE_FILE" -w '%{{http_code}}' \
+            -X POST "$DEPLOY_API" \
+            -H "Authorization: Bearer $AGENTICOPS_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{{\"service\":\"${{SERVICE_NAME}}\",\"image\":\"${{IMAGE_REF}}\",\"swarm\":\"${{SWARM_TARGET}}\"}}")"
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            cat "$RESPONSE_FILE"
+            exit 1
+          fi
+
+          JOB_ID="$(python3 -c \"import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['job_id'])\" \"$RESPONSE_FILE\")"
+          JOB_API="${{AGENTICOPS_API_URL%/}}/api/v1/jobs/${{JOB_ID}}"
+
+          for attempt in $(seq 1 60); do
+            STATUS_FILE="$(mktemp)"
+            STATUS_CODE="$(curl -sS -o "$STATUS_FILE" -w '%{{http_code}}' \
+              -H "Authorization: Bearer $AGENTICOPS_API_KEY" \
+              "$JOB_API")"
+
+            if [ "$STATUS_CODE" -lt 200 ] || [ "$STATUS_CODE" -ge 300 ]; then
+              cat "$STATUS_FILE"
+              exit 1
+            fi
+
+            JOB_STATUS="$(python3 -c \"import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['status'])\" \"$STATUS_FILE\")"
+            echo "Attempt ${{attempt}}: $JOB_STATUS"
+
+            if [ "$JOB_STATUS" = "completed" ]; then
+              exit 0
+            fi
+
+            if [ "$JOB_STATUS" = "failed" ]; then
+              python3 -c \"import json,sys; payload=json.load(open(sys.argv[1], encoding='utf-8')); print(payload.get('error', 'Unknown AgenticOps error'))\" \"$STATUS_FILE\"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for AgenticOps deployment job $JOB_ID"
+          exit 1
